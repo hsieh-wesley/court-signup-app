@@ -1,4 +1,5 @@
 from django.contrib.auth import authenticate
+from django.db.models import Q
 from rest_framework import status
 from rest_framework.authtoken.models import Token
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -11,6 +12,7 @@ from .permissions import TempAccountNotExpired
 from .serializers import (
     CourtBoardSerializer,
     CreateQueueEntrySerializer,
+    JoinOpenSlotSerializer,
     QueueEntrySerializer,
     UnsignSerializer,
 )
@@ -59,10 +61,14 @@ class MyStatusView(APIView):
     permission_classes = [IsAuthenticated, TempAccountNotExpired]
 
     def get(self, request):
-        entries = QueueEntry.objects.filter(
-            members=request.user,
-            status__in=[QueueEntry.Status.WAITING, QueueEntry.Status.ACTIVE],
-        ).order_by("created_at", "id")
+        entries = (
+            QueueEntry.objects.filter(
+                Q(pairs__player_1=request.user) | Q(pairs__player_2=request.user),
+                status__in=[QueueEntry.Status.WAITING, QueueEntry.Status.ACTIVE],
+            )
+            .distinct()
+            .order_by("created_at", "id")
+        )
         return Response(QueueEntrySerializer(entries, many=True).data)
 
 
@@ -73,16 +79,38 @@ class QueueEntryCreateView(APIView):
         serializer = CreateQueueEntrySerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         court = serializer.validated_data["court_id"]
-        usernames = serializer.validated_data["usernames"]
+        pairs = serializer.validated_data["pairs"]
         try:
             entry = services.create_queue_entry(
-                court=court, usernames=usernames, created_by=request.user
+                court=court, pairs=pairs, created_by=request.user
             )
         except services.ServiceError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(
             QueueEntrySerializer(entry).data, status=status.HTTP_201_CREATED
         )
+
+
+class JoinOpenSlotView(APIView):
+    permission_classes = [IsAuthenticated, TempAccountNotExpired]
+
+    def post(self, request, pk):
+        try:
+            entry = QueueEntry.objects.get(pk=pk)
+        except QueueEntry.DoesNotExist:
+            return Response(
+                {"detail": "Queue entry not found."}, status=status.HTTP_404_NOT_FOUND
+            )
+        serializer = JoinOpenSlotSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        usernames = serializer.validated_data["usernames"]
+        try:
+            entry = services.join_open_slot(
+                entry=entry, usernames=usernames, requesting_user=request.user
+            )
+        except services.ServiceError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(QueueEntrySerializer(entry).data)
 
 
 class UnsignView(APIView):
@@ -97,10 +125,10 @@ class UnsignView(APIView):
             )
         serializer = UnsignSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        usernames = serializer.validated_data["usernames"]
+        pair_id = serializer.validated_data["pair_id"]
         try:
-            entry = services.unsign(
-                entry=entry, usernames=usernames, requesting_user=request.user
+            entry = services.unsign_pair(
+                entry=entry, pair_id=pair_id, requesting_user=request.user
             )
         except services.ServiceError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)

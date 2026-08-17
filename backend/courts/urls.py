@@ -9,6 +9,11 @@ urlpatterns = [
     path("me/status/", views.MyStatusView.as_view(), name="my-status"),
     path("queue-entries/", views.QueueEntryCreateView.as_view(), name="queue-entry-create"),
     path(
+        "queue-entries/<int:pk>/join/",
+        views.JoinOpenSlotView.as_view(),
+        name="queue-entry-join",
+    ),
+    path(
         "queue-entries/<int:pk>/unsign/",
         views.UnsignView.as_view(),
         name="queue-entry-unsign",

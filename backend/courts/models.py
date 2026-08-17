@@ -49,7 +49,6 @@ class QueueEntry(models.Model):
         CANCELLED = "cancelled", "Cancelled"
 
     court = models.ForeignKey(Court, on_delete=models.PROTECT, related_name="queue_entries")
-    members = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name="queue_entries")
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
@@ -68,3 +67,33 @@ class QueueEntry(models.Model):
 
     def __str__(self):
         return f"{self.court.name} #{self.pk} ({self.status})"
+
+
+class Pair(models.Model):
+    """Two players occupying one of a QueueEntry's 2 slots."""
+
+    entry = models.ForeignKey(QueueEntry, on_delete=models.CASCADE, related_name="pairs")
+    slot = models.PositiveSmallIntegerField(choices=[(1, "1"), (2, "2")])
+    player_1 = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="pairs_as_player1"
+    )
+    player_2 = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="pairs_as_player2"
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="created_pairs"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["slot"]
+        constraints = [
+            models.UniqueConstraint(fields=["entry", "slot"], name="unique_slot_per_entry"),
+            models.CheckConstraint(
+                condition=~models.Q(player_1=models.F("player_2")),
+                name="pair_players_distinct",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.entry} slot {self.slot}: {self.player_1.username} & {self.player_2.username}"

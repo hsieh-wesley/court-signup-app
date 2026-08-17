@@ -12,6 +12,13 @@ function formatSeconds(total) {
   return `${m}:${s}`;
 }
 
+function slotLabel(entry, slotIndex) {
+  const pair = entry.pairs.find((p) => p.slot === slotIndex);
+  if (pair) return pair.players.join(" & ");
+  if (entry.status === "active") return "Slot closed (timer running)";
+  return "Open slot";
+}
+
 function CourtColumn({ court }) {
   const active = court.active_entry;
   const [remaining, setRemaining] = useState(active?.seconds_remaining ?? null);
@@ -32,9 +39,8 @@ function CourtColumn({ court }) {
         <div className="board-active">
           <div className="board-timer">{formatSeconds(remaining)}</div>
           <ul>
-            {active.members.map((m) => (
-              <li key={m}>{m}</li>
-            ))}
+            <li>{slotLabel(active, 1)}</li>
+            <li className={active.pairs.length < 2 ? "muted" : ""}>{slotLabel(active, 2)}</li>
           </ul>
         </div>
       ) : (
@@ -44,7 +50,10 @@ function CourtColumn({ court }) {
       {court.waiting_entries.length === 0 && <p className="muted">No one waiting</p>}
       <ol>
         {court.waiting_entries.map((entry) => (
-          <li key={entry.id}>{entry.members.join(", ")}</li>
+          <li key={entry.id}>
+            {entry.pairs.map((p) => p.players.join(" & ")).join(", ")}
+            {entry.open_slot && <span className="badge">Open slot</span>}
+          </li>
         ))}
       </ol>
     </div>

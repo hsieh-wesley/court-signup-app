@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.contrib.auth import get_user_model
 from django.contrib.auth.admin import UserAdmin
 
-from .models import Court, PlayerProfile, QueueEntry
+from .models import Court, Pair, PlayerProfile, QueueEntry
 
 User = get_user_model()
 
@@ -33,8 +33,14 @@ class CourtAdmin(admin.ModelAdmin):
     list_display = ("name", "capacity", "is_active")
 
 
+class PairInline(admin.TabularInline):
+    model = Pair
+    extra = 0
+    fields = ("slot", "player_1", "player_2", "created_by")
+
+
 @admin.register(QueueEntry)
 class QueueEntryAdmin(admin.ModelAdmin):
     list_display = ("id", "court", "status", "created_at", "expires_at")
     list_filter = ("court", "status")
-    filter_horizontal = ("members",)
+    inlines = [PairInline]

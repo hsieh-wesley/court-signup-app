@@ -18,7 +18,9 @@ async function request(path, { method = "GET", body, token } = {}) {
   }
 
   if (!res.ok) {
-    const message = data?.detail || data?.usernames?.[0] || "Request failed.";
+    const message =
+      data?.detail || data?.pairs?.[0] || data?.usernames?.[0] || data?.pair_id?.[0] ||
+      "Request failed.";
     throw new Error(message);
   }
   return data;
@@ -30,16 +32,22 @@ export const api = {
   logout: (token) => request("/auth/logout/", { method: "POST", token }),
   getCourts: () => request("/courts/"),
   getMyStatus: (token) => request("/me/status/", { token }),
-  joinQueue: (token, courtId, usernames) =>
+  joinQueue: (token, courtId, pairs) =>
     request("/queue-entries/", {
       method: "POST",
       token,
-      body: { court_id: courtId, usernames },
+      body: { court_id: courtId, pairs },
     }),
-  unsign: (token, entryId, usernames) =>
-    request(`/queue-entries/${entryId}/unsign/`, {
+  joinOpenSlot: (token, entryId, usernames) =>
+    request(`/queue-entries/${entryId}/join/`, {
       method: "POST",
       token,
       body: { usernames },
+    }),
+  unsignPair: (token, entryId, pairId) =>
+    request(`/queue-entries/${entryId}/unsign/`, {
+      method: "POST",
+      token,
+      body: { pair_id: pairId },
     }),
 };

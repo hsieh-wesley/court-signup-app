@@ -2,31 +2,21 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../AuthContext";
 import { api } from "../apiClient";
 
+const PAIR_LABELS = ["Pair A", "Pair B"];
+
 function EntryCard({ entry, onUnsigned }) {
-  const [selected, setSelected] = useState([]);
   const [error, setError] = useState(null);
-  const [submitting, setSubmitting] = useState(false);
+  const [submittingPairId, setSubmittingPairId] = useState(null);
 
-  function toggle(name) {
-    setSelected((prev) =>
-      prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name]
-    );
-  }
-
-  async function handleUnsign() {
+  async function handleUnsign(pair) {
     setError(null);
-    if (selected.length === 0 || selected.length % 2 !== 0) {
-      setError("Pick an even number of players to unsign (2 or 4).");
-      return;
-    }
-    setSubmitting(true);
+    setSubmittingPairId(pair.id);
     try {
-      await onUnsigned(entry, selected);
-      setSelected([]);
+      await onUnsigned(entry, pair.id);
     } catch (err) {
       setError(err.message);
     } finally {
-      setSubmitting(false);
+      setSubmittingPairId(null);
     }
   }
 
@@ -38,24 +28,22 @@ function EntryCard({ entry, onUnsigned }) {
       {entry.status === "active" && entry.seconds_remaining != null && (
         <p className="muted">{Math.ceil(entry.seconds_remaining / 60)} min remaining</p>
       )}
-      <ul className="member-list">
-        {entry.members.map((m) => (
-          <li key={m}>
-            <label>
-              <input
-                type="checkbox"
-                checked={selected.includes(m)}
-                onChange={() => toggle(m)}
-              />
-              {m}
-            </label>
+      <ul className="pair-list">
+        {entry.pairs.map((pair, i) => (
+          <li key={pair.id}>
+            <span>
+              {PAIR_LABELS[i] || `Pair ${i + 1}`}: {pair.players.join(" & ")}
+            </span>
+            <button onClick={() => handleUnsign(pair)} disabled={submittingPairId === pair.id}>
+              {submittingPairId === pair.id ? "Unsigning…" : "Unsign this pair"}
+            </button>
           </li>
         ))}
+        {entry.open_slot && (
+          <li className="muted">Open slot — waiting for a pair to join</li>
+        )}
       </ul>
       {error && <p className="error">{error}</p>}
-      <button onClick={handleUnsign} disabled={submitting}>
-        {submitting ? "Unsigning…" : "Unsign selected"}
-      </button>
     </div>
   );
 }
@@ -77,8 +65,8 @@ export default function StatusPage() {
     return () => clearInterval(interval);
   }, [token]);
 
-  async function handleUnsigned(entry, usernames) {
-    await api.unsign(token, entry.id, usernames);
+  async function handleUnsigned(entry, pairId) {
+    await api.unsignPair(token, entry.id, pairId);
     await refresh();
   }
 
