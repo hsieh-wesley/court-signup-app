@@ -1,0 +1,74 @@
+import { useEffect, useState } from "react";
+import { api } from "../apiClient";
+
+function formatSeconds(total) {
+  if (total == null) return null;
+  const m = Math.floor(total / 60)
+    .toString()
+    .padStart(2, "0");
+  const s = Math.floor(total % 60)
+    .toString()
+    .padStart(2, "0");
+  return `${m}:${s}`;
+}
+
+function CourtColumn({ court }) {
+  const active = court.active_entry;
+  const [remaining, setRemaining] = useState(active?.seconds_remaining ?? null);
+
+  useEffect(() => {
+    setRemaining(active?.seconds_remaining ?? null);
+    if (active?.seconds_remaining == null) return;
+    const tick = setInterval(() => {
+      setRemaining((r) => (r != null && r > 0 ? r - 1 : 0));
+    }, 1000);
+    return () => clearInterval(tick);
+  }, [active?.id, active?.seconds_remaining]);
+
+  return (
+    <div className="board-column">
+      <h2>{court.name}</h2>
+      {active ? (
+        <div className="board-active">
+          <div className="board-timer">{formatSeconds(remaining)}</div>
+          <ul>
+            {active.members.map((m) => (
+              <li key={m}>{m}</li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <p className="muted">Court open</p>
+      )}
+      <h3>Queue</h3>
+      {court.waiting_entries.length === 0 && <p className="muted">No one waiting</p>}
+      <ol>
+        {court.waiting_entries.map((entry) => (
+          <li key={entry.id}>{entry.members.join(", ")}</li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+export default function BoardPage() {
+  const [courts, setCourts] = useState([]);
+
+  useEffect(() => {
+    async function refresh() {
+      const data = await api.getCourts();
+      setCourts(data);
+    }
+    refresh();
+    const interval = setInterval(refresh, 7000);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <div className="board">
+      {courts.map((court) => (
+        <CourtColumn key={court.id} court={court} />
+      ))}
+    </div>
+  );
+}

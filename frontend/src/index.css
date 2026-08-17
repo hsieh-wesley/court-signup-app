@@ -1,0 +1,136 @@
+:root {
+  color-scheme: light;
+  font-family: system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #f4f5f7;
+  color: #1a1a1a;
+}
+
+.muted {
+  color: #666;
+}
+
+.error {
+  color: #b00020;
+}
+
+.success {
+  color: #157347;
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1.5rem;
+  background: #1e293b;
+  color: white;
+}
+
+.nav a {
+  color: #cbd5e1;
+  text-decoration: none;
+}
+
+.nav a.active {
+  color: white;
+  font-weight: 600;
+}
+
+.nav .brand {
+  font-weight: 700;
+}
+
+.nav .spacer {
+  flex: 1;
+}
+
+.page {
+  padding: 1.5rem;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.page-narrow {
+  max-width: 420px;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.9rem;
+}
+
+.form input,
+.form select {
+  padding: 0.5rem;
+  font-size: 1rem;
+}
+
+button {
+  padding: 0.6rem 1rem;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 1rem;
+}
+
+.card {
+  background: white;
+  border-radius: 8px;
+  padding: 1rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.member-list {
+  list-style: none;
+  padding: 0;
+}
+
+.board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1px;
+  background: #0f172a;
+  min-height: 100vh;
+}
+
+.board-column {
+  background: #1e293b;
+  color: white;
+  padding: 1.5rem;
+}
+
+.board-column h2 {
+  margin-top: 0;
+}
+
+.board-timer {
+  font-size: 3rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.board-active ul {
+  list-style: none;
+  padding: 0;
+  font-size: 1.25rem;
+}

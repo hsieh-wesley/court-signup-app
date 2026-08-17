@@ -1,0 +1,15 @@
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-court_signup}
+      POSTGRES_USER: ${POSTGRES_USER:-court_signup}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-court_signup}
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - court_signup_pgdata:/var/lib/postgresql/data
+
+volumes:
+  court_signup_pgdata:
