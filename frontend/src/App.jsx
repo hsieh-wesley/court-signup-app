@@ -4,6 +4,7 @@ import LoginPage from "./pages/LoginPage";
 import JoinPage from "./pages/JoinPage";
 import StatusPage from "./pages/StatusPage";
 import BoardPage from "./pages/BoardPage";
+import AdminPage from "./pages/AdminPage";
 
 function RequireAuth({ children }) {
   const { token } = useAuth();
@@ -11,14 +12,22 @@ function RequireAuth({ children }) {
   return children;
 }
 
+function RequireAdmin({ children }) {
+  const { token, isAdmin } = useAuth();
+  if (!token) return <Navigate to="/login" replace />;
+  if (!isAdmin) return <Navigate to="/join" replace />;
+  return children;
+}
+
 function Nav() {
-  const { token, username, logout } = useAuth();
+  const { token, username, isAdmin, logout } = useAuth();
   return (
     <nav className="nav">
       <span className="brand">Court Signup</span>
       <NavLink to="/join">Join</NavLink>
       <NavLink to="/status">My Status</NavLink>
       <NavLink to="/board">Board</NavLink>
+      {isAdmin && <NavLink to="/admin">Admin</NavLink>}
       <span className="spacer" />
       {token ? (
         <>
@@ -58,6 +67,14 @@ export default function App() {
                     <RequireAuth>
                       <StatusPage />
                     </RequireAuth>
+                  }
+                />
+                <Route
+                  path="/admin"
+                  element={
+                    <RequireAdmin>
+                      <AdminPage />
+                    </RequireAdmin>
                   }
                 />
                 <Route path="/" element={<Navigate to="/join" replace />} />

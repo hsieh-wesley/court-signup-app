@@ -75,6 +75,8 @@ def _conflicting_usernames(locked_court, usernames):
 
 def create_queue_entry(court, pairs, created_by):
     """`pairs` is a list of 1 or 2 [username, username] groups."""
+    if not court.is_active:
+        raise ServiceError(f"{court.name} is not currently available.")
     if len(pairs) not in (1, 2):
         raise ServiceError("Must submit 1 or 2 pairs.")
     for group in pairs:
@@ -134,6 +136,8 @@ def join_open_slot(entry, usernames, requesting_user):
     entry.status/pairs under its own lock and fails cleanly instead of
     double-filling a slot.
     """
+    if not entry.court.is_active:
+        raise ServiceError(f"{entry.court.name} is not currently available.")
     if len(usernames) != 2:
         raise ServiceError("A joining group must be exactly one pair (2 players).")
     if len(set(usernames)) != 2:
@@ -179,6 +183,26 @@ def join_open_slot(entry, usernames, requesting_user):
     return entry
 
 
+def _end_pair(locked_court, locked_entry, pair):
+    """Delete one pair from an entry whose Court+QueueEntry the caller
+    already holds select_for_update() locks on. If it was the entry's last
+    pair, close out the entry (completed/cancelled) and promote the next
+    waiting entry if it was active. Shared by the player-initiated
+    `unsign_pair` and the admin-initiated removal/drop-court actions."""
+    pair.delete()
+    remaining = locked_entry.pairs.count()
+
+    if remaining == 0:
+        was_active = locked_entry.status == QueueEntry.Status.ACTIVE
+        locked_entry.status = (
+            QueueEntry.Status.COMPLETED if was_active else QueueEntry.Status.CANCELLED
+        )
+        locked_entry.ended_at = timezone.now()
+        locked_entry.save()
+        if was_active:
+            _promote_next_if_free(locked_court)
+
+
 def unsign_pair(entry, pair_id, requesting_user):
     """Remove one whole pair from an entry. Any current member of the entry
     may unsign any pair, not just their own — matches the trust model of
@@ -201,18 +225,7 @@ def unsign_pair(entry, pair_id, requesting_user):
         except Pair.DoesNotExist:
             raise ServiceError("That pair is not part of this entry.")
 
-        pair.delete()
-        remaining = locked_entry.pairs.count()
-
-        if remaining == 0:
-            was_active = locked_entry.status == QueueEntry.Status.ACTIVE
-            locked_entry.status = (
-                QueueEntry.Status.COMPLETED if was_active else QueueEntry.Status.CANCELLED
-            )
-            locked_entry.ended_at = timezone.now()
-            locked_entry.save()
-            if was_active:
-                _promote_next_if_free(locked_court)
+        _end_pair(locked_court, locked_entry, pair)
 
     entry.refresh_from_db()
     return entry

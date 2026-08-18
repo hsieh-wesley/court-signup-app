@@ -18,9 +18,10 @@ async function request(path, { method = "GET", body, token } = {}) {
   }
 
   if (!res.ok) {
-    const message =
-      data?.detail || data?.pairs?.[0] || data?.usernames?.[0] || data?.pair_id?.[0] ||
-      "Request failed.";
+    const firstFieldError = data && typeof data === "object"
+      ? Object.values(data).find((v) => Array.isArray(v) && v.length)?.[0]
+      : null;
+    const message = data?.detail || firstFieldError || "Request failed.";
     throw new Error(message);
   }
   return data;
@@ -50,4 +51,46 @@ export const api = {
       token,
       body: { pair_id: pairId },
     }),
+};
+
+export const adminApi = {
+  listPlayers: (token) => request("/admin/players/", { token }),
+  createPlayer: (token, { displayName, username, enableLogin }) =>
+    request("/admin/players/", {
+      method: "POST",
+      token,
+      body: { display_name: displayName, username, enable_login: enableLogin },
+    }),
+  editPlayer: (token, playerId, { displayName, username }) =>
+    request(`/admin/players/${playerId}/`, {
+      method: "PATCH",
+      token,
+      body: { display_name: displayName, username },
+    }),
+  addLogin: (token, playerId, username) =>
+    request(`/admin/players/${playerId}/login/`, {
+      method: "POST",
+      token,
+      body: { username },
+    }),
+  disableLogin: (token, playerId) =>
+    request(`/admin/players/${playerId}/disable-login/`, { method: "POST", token }),
+  resetPassword: (token, playerId) =>
+    request(`/admin/players/${playerId}/reset-password/`, { method: "POST", token }),
+  deactivatePlayer: (token, playerId) =>
+    request(`/admin/players/${playerId}/deactivate/`, { method: "POST", token }),
+  createTestPlayers: (token, count = 8) =>
+    request("/admin/players/bulk-test/", { method: "POST", token, body: { count } }),
+  createCourt: (token, { name, capacity }) =>
+    request("/admin/courts/", { method: "POST", token, body: { name, capacity } }),
+  removePlayerFromCourt: (token, courtId, username) =>
+    request(`/admin/courts/${courtId}/remove-player/`, {
+      method: "POST",
+      token,
+      body: { username },
+    }),
+  dropCourt: (token, courtId) =>
+    request(`/admin/courts/${courtId}/drop/`, { method: "POST", token }),
+  deactivateCourt: (token, courtId) =>
+    request(`/admin/courts/${courtId}/deactivate/`, { method: "POST", token }),
 };

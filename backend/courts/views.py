@@ -30,14 +30,16 @@ class LoginView(APIView):
                 {"detail": "Invalid username or password."},
                 status=status.HTTP_401_UNAUTHORIZED,
             )
-        profile = getattr(user, "player_profile", None)
-        if profile is not None and profile.is_expired:
+        player = getattr(user, "player", None)
+        if player is not None and player.is_expired:
             return Response(
-                {"detail": "This temporary account has expired."},
+                {"detail": "This account has expired."},
                 status=status.HTTP_403_FORBIDDEN,
             )
         token, _ = Token.objects.get_or_create(user=user)
-        return Response({"token": token.key, "username": user.username})
+        return Response(
+            {"token": token.key, "username": user.username, "is_staff": user.is_staff}
+        )
 
 
 class LogoutView(APIView):

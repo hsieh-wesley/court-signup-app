@@ -6,27 +6,43 @@ from django.utils import timezone
 
 
 def default_expires_at():
-    """End of the current day (local time) — temp accounts expire at midnight."""
+    """No longer used by any field — kept only because migrations/0001_initial.py
+    references it as the historical default for PlayerProfile.expires_at, and
+    Django's migration loader imports every migration file to build its graph.
+    Removing this breaks makemigrations/migrate. Do not delete unless
+    0001_initial.py is squashed."""
     now = timezone.localtime()
     end_of_day = datetime.datetime.combine(now.date(), datetime.time(23, 59, 59))
     return timezone.make_aware(end_of_day, timezone.get_current_timezone())
 
 
-class PlayerProfile(models.Model):
-    """Extends a temp auth.User with an end-of-day expiry."""
+class Player(models.Model):
+    """The canonical player/roster record. Login access (a linked auth.User)
+    is optional and separate from being a player — a Player can exist with
+    no login at all."""
 
     user = models.OneToOneField(
-        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="player_profile"
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="player",
     )
-    display_name = models.CharField(max_length=100, blank=True)
-    expires_at = models.DateTimeField(default=default_expires_at)
+    display_name = models.CharField(max_length=100)
+    created_at = models.DateTimeField(auto_now_add=True)
+    is_active = models.BooleanField(default=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
-        return f"{self.user.username} (expires {self.expires_at:%Y-%m-%d %H:%M})"
+        return self.display_name
+
+    @property
+    def has_login(self):
+        return self.user_id is not None
 
     @property
     def is_expired(self):
-        return timezone.now() >= self.expires_at
+        return self.expires_at is not None and timezone.now() >= self.expires_at
 
 
 class Court(models.Model):

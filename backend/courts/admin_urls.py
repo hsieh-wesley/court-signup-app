@@ -1,0 +1,55 @@
+from django.urls import path
+
+from . import admin_views as views
+
+urlpatterns = [
+    path(
+        "players/",
+        views.AdminPlayerListCreateView.as_view(),
+        name="admin-player-list-create",
+    ),
+    path(
+        "players/bulk-test/",
+        views.AdminBulkTestPlayersView.as_view(),
+        name="admin-players-bulk-test",
+    ),
+    path(
+        "players/<int:pk>/",
+        views.AdminPlayerDetailView.as_view(),
+        name="admin-player-detail",
+    ),
+    path(
+        "players/<int:pk>/login/",
+        views.AdminPlayerLoginView.as_view(),
+        name="admin-player-login",
+    ),
+    path(
+        "players/<int:pk>/disable-login/",
+        views.AdminPlayerDisableLoginView.as_view(),
+        name="admin-player-disable-login",
+    ),
+    path(
+        "players/<int:pk>/reset-password/",
+        views.AdminPlayerResetPasswordView.as_view(),
+        name="admin-player-reset-password",
+    ),
+    path(
+        "players/<int:pk>/deactivate/",
+        views.AdminPlayerDeactivateView.as_view(),
+        name="admin-player-deactivate",
+    ),
+    path("courts/", views.AdminCourtCreateView.as_view(), name="admin-court-create"),
+    path(
+        "courts/<int:pk>/remove-player/",
+        views.AdminCourtRemovePlayerView.as_view(),
+        name="admin-court-remove-player",
+    ),
+    path(
+        "courts/<int:pk>/drop/", views.AdminCourtDropView.as_view(), name="admin-court-drop"
+    ),
+    path(
+        "courts/<int:pk>/deactivate/",
+        views.AdminCourtDeactivateView.as_view(),
+        name="admin-court-deactivate",
+    ),
+]
