@@ -1,17 +1,24 @@
 import datetime
 
 from django.conf import settings
-from django.contrib.auth import get_user_model
+from django.contrib.auth import authenticate, get_user_model
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
-from .models import Court, Pair, QueueEntry
+from . import activity_log
+from .models import Court, CourtActivityLog, Pair, PlayerSession, QueueEntry
 
 User = get_user_model()
 
 
 class ServiceError(Exception):
-    """Raised for business-rule violations; views translate this to a 400."""
+    """Raised for business-rule violations; views translate this to a JSON
+    error response using `status` (default 400)."""
+
+    def __init__(self, message, status=400):
+        super().__init__(message)
+        self.status = status
 
 
 def _reservation_expiry(now):
@@ -35,6 +42,10 @@ def _promote_next_if_free(court):
     next_entry.activated_at = now
     next_entry.expires_at = _reservation_expiry(now)
     next_entry.save()
+    for pair in next_entry.pairs.select_related("player_1", "player_2").all():
+        activity_log.log_pair_event(
+            CourtActivityLog.EventType.PAIR_ACTIVATED, court, next_entry, pair
+        )
 
 
 def reap_expired_reservations(court_ids=None):
@@ -54,6 +65,14 @@ def reap_expired_reservations(court_ids=None):
                 .first()
             )
             if active and active.expires_at and active.expires_at <= timezone.now():
+                for pair in active.pairs.select_related("player_1", "player_2").all():
+                    activity_log.log_pair_event(
+                        CourtActivityLog.EventType.PAIR_ENDED,
+                        locked_court,
+                        active,
+                        pair,
+                        reason=CourtActivityLog.Reason.EXPIRED,
+                    )
                 active.status = QueueEntry.Status.EXPIRED
                 active.ended_at = timezone.now()
                 active.save()
@@ -75,7 +94,7 @@ def _conflicting_usernames(locked_court, usernames):
 
 def create_queue_entry(court, pairs, created_by):
     """`pairs` is a list of 1 or 2 [username, username] groups."""
-    if not court.is_active:
+    if not court.is_active or not court.location.is_active:
         raise ServiceError(f"{court.name} is not currently available.")
     if len(pairs) not in (1, 2):
         raise ServiceError("Must submit 1 or 2 pairs.")
@@ -112,16 +131,25 @@ def create_queue_entry(court, pairs, created_by):
         entry = QueueEntry.objects.create(
             court=locked_court, created_by=created_by, status=QueueEntry.Status.WAITING
         )
+        created_pairs = []
         for slot, group in enumerate(pairs, start=1):
-            Pair.objects.create(
+            pair = Pair.objects.create(
                 entry=entry,
                 slot=slot,
                 player_1=users_by_username[group[0]],
                 player_2=users_by_username[group[1]],
                 created_by=created_by,
             )
+            created_pairs.append(pair)
 
         _promote_next_if_free(locked_court)
+
+        entry.refresh_from_db()
+        if entry.status == QueueEntry.Status.WAITING:
+            for pair in created_pairs:
+                activity_log.log_pair_event(
+                    CourtActivityLog.EventType.PAIR_QUEUED, locked_court, entry, pair
+                )
 
     entry.refresh_from_db()
     return entry
@@ -136,7 +164,7 @@ def join_open_slot(entry, usernames, requesting_user):
     entry.status/pairs under its own lock and fails cleanly instead of
     double-filling a slot.
     """
-    if not entry.court.is_active:
+    if not entry.court.is_active or not entry.court.location.is_active:
         raise ServiceError(f"{entry.court.name} is not currently available.")
     if len(usernames) != 2:
         raise ServiceError("A joining group must be exactly one pair (2 players).")
@@ -171,24 +199,32 @@ def join_open_slot(entry, usernames, requesting_user):
                 f"Already signed up on {locked_court.name}: {', '.join(conflicting_names)}."
             )
 
-        Pair.objects.create(
+        pair = Pair.objects.create(
             entry=locked_entry,
             slot=open_slot,
             player_1=users_by_username[usernames[0]],
             player_2=users_by_username[usernames[1]],
             created_by=requesting_user,
         )
+        activity_log.log_pair_event(
+            CourtActivityLog.EventType.OPEN_SLOT_JOINED, locked_court, locked_entry, pair
+        )
 
     entry.refresh_from_db()
     return entry
 
 
-def _end_pair(locked_court, locked_entry, pair):
+def _end_pair(locked_court, locked_entry, pair, reason, actor=None):
     """Delete one pair from an entry whose Court+QueueEntry the caller
-    already holds select_for_update() locks on. If it was the entry's last
-    pair, close out the entry (completed/cancelled) and promote the next
-    waiting entry if it was active. Shared by the player-initiated
-    `unsign_pair` and the admin-initiated removal/drop-court actions."""
+    already holds select_for_update() locks on, logging why before it's
+    gone. If it was the entry's last pair, close out the entry
+    (completed/cancelled) and promote the next waiting entry if it was
+    active. Shared by the player-initiated `unsign_pair` and the
+    admin-initiated removal actions."""
+    activity_log.log_pair_event(
+        CourtActivityLog.EventType.PAIR_ENDED, locked_court, locked_entry, pair,
+        reason=reason, actor=actor,
+    )
     pair.delete()
     remaining = locked_entry.pairs.count()
 
@@ -225,7 +261,60 @@ def unsign_pair(entry, pair_id, requesting_user):
         except Pair.DoesNotExist:
             raise ServiceError("That pair is not part of this entry.")
 
-        _end_pair(locked_court, locked_entry, pair)
+        _end_pair(locked_court, locked_entry, pair, reason=CourtActivityLog.Reason.UNSIGNED)
 
     entry.refresh_from_db()
     return entry
+
+
+def verify_pair_credentials(pairs_credentials, requesting_user):
+    """`pairs_credentials` is a list of 1-2 groups, each a list of 2
+    {"username", "password"} dicts. Every member's password is verified via
+    Django's authenticate() except the requesting (already session-
+    authenticated) user's own. Returns the equivalent plain
+    [[username, username], ...] structure for services.create_queue_entry /
+    join_open_slot, which are otherwise unchanged."""
+    result = []
+    for group in pairs_credentials:
+        usernames = []
+        for member in group:
+            username = member.get("username", "")
+            if username != requesting_user.username:
+                password = member.get("password", "")
+                verified = authenticate(username=username, password=password)
+                if verified is None:
+                    raise ServiceError(f"Incorrect username or password for {username}.")
+            usernames.append(username)
+        result.append(usernames)
+    return result
+
+
+def create_player_session(user, location):
+    """Authenticates `user` for `location`. Regular players are limited to
+    one active session system-wide: if they currently hold an active/
+    waiting pair at a *different* location, the switch is rejected (409)
+    rather than silently ending their game there. Admins are exempt from
+    both the conflict check and the single-session limit."""
+    if not user.is_staff:
+        conflict = (
+            Pair.objects.filter(
+                Q(player_1=user) | Q(player_2=user),
+                entry__status__in=[QueueEntry.Status.WAITING, QueueEntry.Status.ACTIVE],
+            )
+            .exclude(entry__court__location=location)
+            .select_related("entry__court__location")
+            .first()
+        )
+        if conflict:
+            loc = conflict.entry.court.location
+            court = conflict.entry.court
+            raise ServiceError(
+                f"Still signed in at {loc.name} (Court {court.number}). "
+                f"Leave that court before switching facilities.",
+                status=409,
+            )
+        PlayerSession.objects.filter(user=user).delete()
+
+    session = PlayerSession.objects.create(user=user, location=location)
+    activity_log.log_login(user, location)
+    return session

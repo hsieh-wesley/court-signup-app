@@ -52,6 +52,26 @@ body {
   flex: 1;
 }
 
+.nav .admin-corner-link {
+  margin-left: 1rem;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid #475569;
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+
+.location-switcher {
+  padding: 0.35rem 0.5rem;
+  border-radius: 6px;
+  border: none;
+}
+
+.facility-header {
+  text-align: center;
+  margin: 1rem 0 0;
+  padding: 0 1rem;
+}
+
 .page {
   padding: 1.5rem;
   max-width: 900px;
@@ -144,11 +164,52 @@ button {
 }
 
 .board {
+  background: #0f172a;
+  min-height: 100vh;
+}
+
+.board-title {
+  color: white;
+  text-align: center;
+  padding: 1rem 0 0;
+  margin: 0;
+}
+
+.board-columns {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 1px;
-  background: #0f172a;
-  min-height: 100vh;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  z-index: 10;
+}
+
+.modal {
+  max-width: 400px;
+  width: 100%;
+}
+
+.history-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1.5rem;
+  background: white;
+  font-size: 0.85rem;
+}
+
+.history-table th,
+.history-table td {
+  text-align: left;
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid #e2e8f0;
 }
 
 .board-column {

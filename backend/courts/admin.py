@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.contrib.auth import get_user_model
 from django.contrib.auth.admin import UserAdmin
 
-from .models import Court, Pair, Player, QueueEntry
+from .models import Court, CourtActivityLog, Location, LoginLog, Pair, Player, QueueEntry
 
 User = get_user_model()
 
@@ -34,9 +34,15 @@ class PlayerAdmin(admin.ModelAdmin):
     list_filter = ("is_active",)
 
 
+@admin.register(Location)
+class LocationAdmin(admin.ModelAdmin):
+    list_display = ("name", "is_active", "created_at")
+
+
 @admin.register(Court)
 class CourtAdmin(admin.ModelAdmin):
-    list_display = ("name", "capacity", "is_active")
+    list_display = ("name", "location", "number", "capacity", "is_active")
+    list_filter = ("location", "is_active")
 
 
 class PairInline(admin.TabularInline):
@@ -50,3 +56,38 @@ class QueueEntryAdmin(admin.ModelAdmin):
     list_display = ("id", "court", "status", "created_at", "expires_at")
     list_filter = ("court", "status")
     inlines = [PairInline]
+
+
+@admin.register(LoginLog)
+class LoginLogAdmin(admin.ModelAdmin):
+    list_display = ("username", "location_name", "created_at")
+    list_filter = ("location",)
+    readonly_fields = [f.name for f in LoginLog._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(CourtActivityLog)
+class CourtActivityLogAdmin(admin.ModelAdmin):
+    list_display = (
+        "event_type", "reason", "location_name", "court_number",
+        "player_1_username", "player_2_username", "actor_username", "created_at",
+    )
+    list_filter = ("event_type", "reason", "location")
+    readonly_fields = [f.name for f in CourtActivityLog._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False

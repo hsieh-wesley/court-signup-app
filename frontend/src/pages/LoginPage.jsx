@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../AuthContext";
+import { useFacility } from "../LocationContext";
 
 export default function LoginPage() {
-  const { login } = useAuth();
+  const { login, isAdmin } = useAuth();
+  const { selectedLocationId } = useFacility();
   const navigate = useNavigate();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -15,8 +17,8 @@ export default function LoginPage() {
     setError(null);
     setSubmitting(true);
     try {
-      await login(username, password);
-      navigate("/join");
+      const data = await login(username, password, selectedLocationId);
+      navigate(data.is_staff ? "/admin" : "/overview");
     } catch (err) {
       setError(err.message);
     } finally {
@@ -27,7 +29,11 @@ export default function LoginPage() {
   return (
     <div className="page page-narrow">
       <h1>Sign in</h1>
-      <p className="muted">Use the temp username and password you were given at the desk.</p>
+      <p className="muted">
+        {isAdmin
+          ? "Administrator sign in."
+          : "Players usually don't need this page — create a username from Join, or sign in when joining a court from Overview."}
+      </p>
       <form onSubmit={handleSubmit} className="form">
         <label>
           Username

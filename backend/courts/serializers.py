@@ -1,7 +1,13 @@
 from django.conf import settings
 from rest_framework import serializers
 
-from .models import Court, Pair, QueueEntry
+from .models import Court, Location, Pair, QueueEntry
+
+
+class LocationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Location
+        fields = ["id", "name"]
 
 
 class PairSerializer(serializers.ModelSerializer):
@@ -51,10 +57,14 @@ class QueueEntrySerializer(serializers.ModelSerializer):
 class CourtBoardSerializer(serializers.ModelSerializer):
     active_entry = serializers.SerializerMethodField()
     waiting_entries = serializers.SerializerMethodField()
+    location = serializers.SlugRelatedField(slug_field="name", read_only=True)
 
     class Meta:
         model = Court
-        fields = ["id", "name", "capacity", "is_active", "active_entry", "waiting_entries"]
+        fields = [
+            "id", "name", "number", "location", "capacity", "is_active",
+            "active_entry", "waiting_entries",
+        ]
 
     def get_active_entry(self, court):
         entry = court.queue_entries.filter(status=QueueEntry.Status.ACTIVE).first()
@@ -67,18 +77,27 @@ class CourtBoardSerializer(serializers.ModelSerializer):
         return QueueEntrySerializer(entries, many=True).data
 
 
+class PlayerCredentialSerializer(serializers.Serializer):
+    """One pair member's identity for a join/create action. `password` is
+    only required for players other than the token-authenticated requester
+    — theirs is skipped since their session already proves identity."""
+
+    username = serializers.CharField(max_length=150)
+    password = serializers.CharField(max_length=150, required=False, allow_blank=True)
+
+
 class CreateQueueEntrySerializer(serializers.Serializer):
     court_id = serializers.PrimaryKeyRelatedField(queryset=Court.objects.all())
     pairs = serializers.ListField(
         child=serializers.ListField(
-            child=serializers.CharField(max_length=150), min_length=2, max_length=2
+            child=PlayerCredentialSerializer(), min_length=2, max_length=2
         ),
         min_length=1,
         max_length=2,
     )
 
     def validate_pairs(self, value):
-        flat = [username for group in value for username in group]
+        flat = [member["username"] for group in value for member in group]
         if len(flat) not in settings.ALLOWED_GROUP_SIZES:
             raise serializers.ValidationError(
                 f"Group size must be one of {settings.ALLOWED_GROUP_SIZES}."
@@ -87,8 +106,8 @@ class CreateQueueEntrySerializer(serializers.Serializer):
 
 
 class JoinOpenSlotSerializer(serializers.Serializer):
-    usernames = serializers.ListField(
-        child=serializers.CharField(max_length=150), min_length=2, max_length=2
+    credentials = serializers.ListField(
+        child=PlayerCredentialSerializer(), min_length=2, max_length=2
     )
 
 

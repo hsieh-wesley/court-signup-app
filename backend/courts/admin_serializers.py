@@ -1,7 +1,7 @@
 from django.db.models import Q
 from rest_framework import serializers
 
-from .models import Court, Pair, Player, QueueEntry
+from .models import Court, CourtActivityLog, Location, LoginLog, Pair, Player, QueueEntry
 
 
 class AdminPlayerSerializer(serializers.ModelSerializer):
@@ -37,18 +37,52 @@ class AdminPlayerSerializer(serializers.ModelSerializer):
                 Q(player_1=player.user) | Q(player_2=player.user),
                 entry__status__in=[QueueEntry.Status.WAITING, QueueEntry.Status.ACTIVE],
             )
-            .select_related("entry", "entry__court")
+            .select_related("entry", "entry__court", "entry__court__location")
             .first()
         )
         if pair is None:
             return None
-        return {"court": pair.entry.court.name, "status": pair.entry.status}
+        return {
+            "location": pair.entry.court.location.name,
+            "court": pair.entry.court.name,
+            "status": pair.entry.status,
+        }
 
 
 class AdminCourtSerializer(serializers.ModelSerializer):
     class Meta:
         model = Court
-        fields = ["id", "name", "capacity", "is_active"]
+        fields = ["id", "name", "number", "location", "capacity", "is_active"]
+
+
+class AdminLocationSerializer(serializers.ModelSerializer):
+    court_count = serializers.SerializerMethodField()
+    active_court_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Location
+        fields = ["id", "name", "is_active", "created_at", "court_count", "active_court_count"]
+
+    def get_court_count(self, location):
+        return location.courts.count()
+
+    def get_active_court_count(self, location):
+        return location.courts.filter(is_active=True).count()
+
+
+class LoginLogSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = LoginLog
+        fields = ["id", "username", "location_name", "created_at"]
+
+
+class CourtActivityLogSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CourtActivityLog
+        fields = [
+            "id", "event_type", "reason", "location_name", "court_number",
+            "player_1_username", "player_2_username", "actor_username", "created_at",
+        ]
 
 
 class AdminPlayerCreateSerializer(serializers.Serializer):
@@ -78,9 +112,24 @@ class AdminRemovePlayerSerializer(serializers.Serializer):
 
 
 class AdminCourtCreateSerializer(serializers.Serializer):
-    name = serializers.CharField(max_length=100)
+    location_id = serializers.PrimaryKeyRelatedField(queryset=Location.objects.all())
+    number = serializers.IntegerField(required=False, min_value=1, max_value=100)
     capacity = serializers.IntegerField(required=False, min_value=1)
 
 
 class AdminBulkTestPlayersSerializer(serializers.Serializer):
     count = serializers.IntegerField(default=8, min_value=1, max_value=50)
+
+
+class AdminLocationCreateSerializer(serializers.Serializer):
+    name = serializers.CharField(max_length=100)
+    court_count = serializers.IntegerField(default=10, min_value=1, max_value=100)
+
+
+class AdminLocationEditSerializer(serializers.Serializer):
+    name = serializers.CharField(max_length=100, required=False)
+    is_active = serializers.BooleanField(required=False)
+
+
+class AdminCourtCountSerializer(serializers.Serializer):
+    count = serializers.IntegerField(min_value=1, max_value=100)

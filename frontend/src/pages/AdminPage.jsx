@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../AuthContext";
+import { useFacility } from "../LocationContext";
 import { adminApi, api } from "../apiClient";
 
 function CredentialBanner({ credentials, onDismiss }) {
@@ -133,7 +134,8 @@ function PlayerRow({ player, onAction, onSave }) {
       </p>
       {player.current_assignment && (
         <p className="muted">
-          On {player.current_assignment.court} ({player.current_assignment.status})
+          On {player.current_assignment.location} — {player.current_assignment.court} (
+          {player.current_assignment.status})
         </p>
       )}
       <div className="mode-toggle">
@@ -239,7 +241,7 @@ function UsersPanel() {
 }
 
 function AddCourtForm({ onCreate }) {
-  const [name, setName] = useState("");
+  const [number, setNumber] = useState("");
   const [capacity, setCapacity] = useState("");
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -249,8 +251,11 @@ function AddCourtForm({ onCreate }) {
     setError(null);
     setSubmitting(true);
     try {
-      await onCreate({ name, capacity: capacity ? Number(capacity) : undefined });
-      setName("");
+      await onCreate({
+        number: number ? Number(number) : undefined,
+        capacity: capacity ? Number(capacity) : undefined,
+      });
+      setNumber("");
       setCapacity("");
     } catch (err) {
       setError(err.message);
@@ -262,8 +267,8 @@ function AddCourtForm({ onCreate }) {
   return (
     <form onSubmit={handleSubmit} className="form">
       <label>
-        Court name
-        <input value={name} onChange={(e) => setName(e.target.value)} required />
+        Court number (optional — next available if blank)
+        <input value={number} onChange={(e) => setNumber(e.target.value)} type="number" min="1" max="100" />
       </label>
       <label>
         Capacity (optional)
@@ -317,19 +322,21 @@ function CourtCard({ court, onAction }) {
 
 function CourtsPanel() {
   const { token } = useAuth();
+  const { locations, selectedLocationId, setSelectedLocationId } = useFacility();
   const [courts, setCourts] = useState([]);
   const [error, setError] = useState(null);
 
   async function refresh() {
-    setCourts(await api.getCourts());
+    if (!selectedLocationId) return;
+    setCourts(await api.getCourts(selectedLocationId));
   }
 
   useEffect(() => {
     refresh();
-  }, []);
+  }, [selectedLocationId]);
 
   async function handleCreate(data) {
-    await adminApi.createCourt(token, data);
+    await adminApi.createCourt(token, { locationId: selectedLocationId, ...data });
     await refresh();
   }
 
@@ -353,6 +360,16 @@ function CourtsPanel() {
 
   return (
     <div>
+      <label>
+        Managing location
+        <select value={selectedLocationId || ""} onChange={(e) => setSelectedLocationId(e.target.value)}>
+          {locations.map((loc) => (
+            <option key={loc.id} value={loc.id}>
+              {loc.name}
+            </option>
+          ))}
+        </select>
+      </label>
       {error && <p className="error">{error}</p>}
       <div className="card">
         <h3>Add Court</h3>
@@ -363,6 +380,262 @@ function CourtsPanel() {
           <CourtCard key={c.id} court={c} onAction={handleAction} />
         ))}
       </div>
+    </div>
+  );
+}
+
+function AddLocationForm({ onCreate }) {
+  const [name, setName] = useState("");
+  const [courtCount, setCourtCount] = useState("10");
+  const [error, setError] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    try {
+      await onCreate({ name, courtCount: Number(courtCount) || 10 });
+      setName("");
+      setCourtCount("10");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="form">
+      <label>
+        Location name
+        <input value={name} onChange={(e) => setName(e.target.value)} required />
+      </label>
+      <label>
+        Number of courts (1-100, default 10)
+        <input
+          value={courtCount}
+          onChange={(e) => setCourtCount(e.target.value)}
+          type="number"
+          min="1"
+          max="100"
+        />
+      </label>
+      {error && <p className="error">{error}</p>}
+      <button type="submit" disabled={submitting}>
+        {submitting ? "Adding…" : "Add Location"}
+      </button>
+    </form>
+  );
+}
+
+function LocationCard({ location, onAction }) {
+  const [countInput, setCountInput] = useState(String(location.court_count));
+
+  return (
+    <div className="card">
+      <h3>
+        {location.name}
+        {!location.is_active && <span className="badge">Deactivated</span>}
+      </h3>
+      <p className="muted">
+        {location.active_court_count} active / {location.court_count} total courts
+      </p>
+      <div className="mode-toggle">
+        <input
+          value={countInput}
+          onChange={(e) => setCountInput(e.target.value)}
+          type="number"
+          min="1"
+          max="100"
+          style={{ width: "5rem" }}
+        />
+        <button onClick={() => onAction("setCount", location, Number(countInput))}>
+          Set court count
+        </button>
+      </div>
+      <div className="mode-toggle">
+        {location.is_active ? (
+          <button onClick={() => onAction("deactivate", location)}>Deactivate</button>
+        ) : (
+          <button onClick={() => onAction("activate", location)}>Reactivate</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function LocationsPanel() {
+  const { token } = useAuth();
+  const { locations: publicLocations } = useFacility();
+  const [locations, setLocations] = useState([]);
+  const [error, setError] = useState(null);
+
+  async function refresh() {
+    setLocations(await adminApi.listLocations(token));
+  }
+
+  useEffect(() => {
+    refresh();
+  }, [publicLocations.length]);
+
+  async function handleCreate(data) {
+    await adminApi.createLocation(token, data);
+    await refresh();
+  }
+
+  async function handleAction(action, location, count) {
+    try {
+      if (action === "setCount") {
+        if (
+          count < location.court_count &&
+          !confirm(
+            `Reduce ${location.name} to ${count} courts? Any occupied courts above that number will be dropped and those players returned to unsigned.`
+          )
+        ) {
+          return;
+        }
+        await adminApi.setCourtCount(token, location.id, count);
+      } else if (action === "deactivate") {
+        if (
+          !confirm(
+            `Deactivate ${location.name}? Occupied courts will be dropped first, and it will stop accepting new signups.`
+          )
+        )
+          return;
+        await adminApi.editLocation(token, location.id, { isActive: false });
+      } else if (action === "activate") {
+        await adminApi.editLocation(token, location.id, { isActive: true });
+      }
+      await refresh();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  return (
+    <div>
+      {error && <p className="error">{error}</p>}
+      <div className="card">
+        <h3>Add Location</h3>
+        <AddLocationForm onCreate={handleCreate} />
+      </div>
+      <div className="card-grid">
+        {locations.map((loc) => (
+          <LocationCard key={loc.id} location={loc} onAction={handleAction} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function HistoryPanel() {
+  const { token } = useAuth();
+  const { locations } = useFacility();
+  const [logins, setLogins] = useState([]);
+  const [activity, setActivity] = useState([]);
+  const [locationFilter, setLocationFilter] = useState("");
+  const [usernameFilter, setUsernameFilter] = useState("");
+  const [eventTypeFilter, setEventTypeFilter] = useState("");
+
+  async function refresh() {
+    const filters = { location_id: locationFilter || undefined, username: usernameFilter || undefined };
+    setLogins(await adminApi.getLoginHistory(token, filters));
+    setActivity(
+      await adminApi.getCourtActivityHistory(token, {
+        ...filters,
+        event_type: eventTypeFilter || undefined,
+      })
+    );
+  }
+
+  useEffect(() => {
+    refresh();
+  }, [locationFilter, usernameFilter, eventTypeFilter]);
+
+  return (
+    <div>
+      <div className="form">
+        <label>
+          Location
+          <select value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)}>
+            <option value="">All</option>
+            {locations.map((loc) => (
+              <option key={loc.id} value={loc.id}>
+                {loc.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Username
+          <input value={usernameFilter} onChange={(e) => setUsernameFilter(e.target.value)} />
+        </label>
+        <label>
+          Event type (court activity only)
+          <select value={eventTypeFilter} onChange={(e) => setEventTypeFilter(e.target.value)}>
+            <option value="">All</option>
+            <option value="pair_queued">Pair queued</option>
+            <option value="pair_activated">Pair activated</option>
+            <option value="open_slot_joined">Open slot joined</option>
+            <option value="pair_ended">Pair ended</option>
+            <option value="court_dropped">Court dropped</option>
+            <option value="court_deactivated">Court deactivated</option>
+            <option value="court_reactivated">Court reactivated</option>
+          </select>
+        </label>
+      </div>
+
+      <h3>Logins</h3>
+      <table className="history-table">
+        <thead>
+          <tr>
+            <th>When</th>
+            <th>Username</th>
+            <th>Location</th>
+          </tr>
+        </thead>
+        <tbody>
+          {logins.map((row) => (
+            <tr key={row.id}>
+              <td>{new Date(row.created_at).toLocaleString()}</td>
+              <td>{row.username}</td>
+              <td>{row.location_name}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <h3>Court Activity</h3>
+      <table className="history-table">
+        <thead>
+          <tr>
+            <th>When</th>
+            <th>Event</th>
+            <th>Location</th>
+            <th>Court</th>
+            <th>Players</th>
+            <th>Actor</th>
+          </tr>
+        </thead>
+        <tbody>
+          {activity.map((row) => (
+            <tr key={row.id}>
+              <td>{new Date(row.created_at).toLocaleString()}</td>
+              <td>
+                {row.event_type}
+                {row.reason ? ` (${row.reason})` : ""}
+              </td>
+              <td>{row.location_name}</td>
+              <td>{row.court_number}</td>
+              <td>
+                {[row.player_1_username, row.player_2_username].filter(Boolean).join(" & ")}
+              </td>
+              <td>{row.actor_username || "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -379,8 +652,17 @@ export default function AdminPage() {
         <button className={tab === "courts" ? "active" : ""} onClick={() => setTab("courts")}>
           Courts
         </button>
+        <button className={tab === "locations" ? "active" : ""} onClick={() => setTab("locations")}>
+          Locations
+        </button>
+        <button className={tab === "history" ? "active" : ""} onClick={() => setTab("history")}>
+          History
+        </button>
       </div>
-      {tab === "users" ? <UsersPanel /> : <CourtsPanel />}
+      {tab === "users" && <UsersPanel />}
+      {tab === "courts" && <CourtsPanel />}
+      {tab === "locations" && <LocationsPanel />}
+      {tab === "history" && <HistoryPanel />}
     </div>
   );
 }

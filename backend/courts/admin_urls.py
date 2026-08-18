@@ -52,4 +52,29 @@ urlpatterns = [
         views.AdminCourtDeactivateView.as_view(),
         name="admin-court-deactivate",
     ),
+    path(
+        "locations/",
+        views.AdminLocationListCreateView.as_view(),
+        name="admin-location-list-create",
+    ),
+    path(
+        "locations/<int:pk>/",
+        views.AdminLocationDetailView.as_view(),
+        name="admin-location-detail",
+    ),
+    path(
+        "locations/<int:pk>/court-count/",
+        views.AdminLocationCourtCountView.as_view(),
+        name="admin-location-court-count",
+    ),
+    path(
+        "history/logins/",
+        views.AdminLoginHistoryView.as_view(),
+        name="admin-history-logins",
+    ),
+    path(
+        "history/court-activity/",
+        views.AdminCourtActivityHistoryView.as_view(),
+        name="admin-history-court-activity",
+    ),
 ]

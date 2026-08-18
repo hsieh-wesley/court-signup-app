@@ -1,10 +1,9 @@
 import pytest
 from django.contrib.auth import authenticate
-from rest_framework.authtoken.models import Token
 
 from courts import admin_services, services
-from courts.models import Player, QueueEntry
-from courts.tests.factories import make_court, make_user, pair_for
+from courts.models import Player, PlayerSession, QueueEntry
+from courts.tests.factories import default_location, make_court, make_user, pair_for
 
 pytestmark = pytest.mark.django_db
 
@@ -38,23 +37,23 @@ def test_create_player_rejects_taken_username():
         admin_services.create_player(display_name="Grace 2", username="grace", enable_login=True)
 
 
-# Row 4: reset invalidates the old password and the old token
-def test_reset_password_invalidates_old_password_and_token():
+# Row 4: reset invalidates the old password and the old session
+def test_reset_password_invalidates_old_password_and_session():
     user = make_user("grace")
-    old_token = Token.objects.create(user=user)
+    old_session = PlayerSession.objects.create(user=user, location=default_location())
     player = user.player
 
     new_plaintext = admin_services.reset_password(player)
 
     assert authenticate(username="grace", password="pw12345") is None
     assert authenticate(username="grace", password=new_plaintext) is not None
-    assert not Token.objects.filter(pk=old_token.pk).exists()
+    assert not PlayerSession.objects.filter(pk=old_session.pk).exists()
 
 
 # Row 5: disabling login blocks auth but leaves the player record active
 def test_disable_login_blocks_auth_but_keeps_player_active():
     user = make_user("grace")
-    Token.objects.create(user=user)
+    PlayerSession.objects.create(user=user, location=default_location())
     player = user.player
 
     admin_services.disable_login(player)
@@ -64,7 +63,7 @@ def test_disable_login_blocks_auth_but_keeps_player_active():
     assert user.is_active is False
     assert authenticate(username="grace", password="pw12345") is None
     assert player.is_active is True
-    assert Token.objects.filter(user=user).count() == 0
+    assert PlayerSession.objects.filter(user=user).count() == 0
 
 
 # Row 6: re-adding login reuses the same User row and issues a fresh password

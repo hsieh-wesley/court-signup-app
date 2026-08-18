@@ -21,17 +21,34 @@ async function request(path, { method = "GET", body, token } = {}) {
     const firstFieldError = data && typeof data === "object"
       ? Object.values(data).find((v) => Array.isArray(v) && v.length)?.[0]
       : null;
-    const message = data?.detail || firstFieldError || "Request failed.";
-    throw new Error(message);
+    const error = new Error(data?.detail || firstFieldError || "Request failed.");
+    error.status = res.status;
+    throw error;
   }
   return data;
 }
 
+function qs(params) {
+  const entries = Object.entries(params || {}).filter(([, v]) => v !== undefined && v !== null && v !== "");
+  if (!entries.length) return "";
+  return "?" + new URLSearchParams(entries).toString();
+}
+
 export const api = {
-  login: (username, password) =>
-    request("/auth/login/", { method: "POST", body: { username, password } }),
+  login: (username, password, locationId) =>
+    request("/auth/login/", {
+      method: "POST",
+      body: { username, password, location_id: locationId },
+    }),
   logout: (token) => request("/auth/logout/", { method: "POST", token }),
-  getCourts: () => request("/courts/"),
+  getLocations: () => request("/locations/"),
+  checkUsername: (username) => request(`/players/check-username/${qs({ username })}`),
+  registerPlayer: (username, locationId) =>
+    request("/players/register/", {
+      method: "POST",
+      body: { username, location_id: locationId },
+    }),
+  getCourts: (locationId) => request(`/courts/${qs({ location_id: locationId })}`),
   getMyStatus: (token) => request("/me/status/", { token }),
   joinQueue: (token, courtId, pairs) =>
     request("/queue-entries/", {
@@ -39,11 +56,11 @@ export const api = {
       token,
       body: { court_id: courtId, pairs },
     }),
-  joinOpenSlot: (token, entryId, usernames) =>
+  joinOpenSlot: (token, entryId, credentials) =>
     request(`/queue-entries/${entryId}/join/`, {
       method: "POST",
       token,
-      body: { usernames },
+      body: { credentials },
     }),
   unsignPair: (token, entryId, pairId) =>
     request(`/queue-entries/${entryId}/unsign/`, {
@@ -81,8 +98,12 @@ export const adminApi = {
     request(`/admin/players/${playerId}/deactivate/`, { method: "POST", token }),
   createTestPlayers: (token, count = 8) =>
     request("/admin/players/bulk-test/", { method: "POST", token, body: { count } }),
-  createCourt: (token, { name, capacity }) =>
-    request("/admin/courts/", { method: "POST", token, body: { name, capacity } }),
+  createCourt: (token, { locationId, number, capacity }) =>
+    request("/admin/courts/", {
+      method: "POST",
+      token,
+      body: { location_id: locationId, number, capacity },
+    }),
   removePlayerFromCourt: (token, courtId, username) =>
     request(`/admin/courts/${courtId}/remove-player/`, {
       method: "POST",
@@ -93,4 +114,27 @@ export const adminApi = {
     request(`/admin/courts/${courtId}/drop/`, { method: "POST", token }),
   deactivateCourt: (token, courtId) =>
     request(`/admin/courts/${courtId}/deactivate/`, { method: "POST", token }),
+  listLocations: (token) => request("/admin/locations/", { token }),
+  createLocation: (token, { name, courtCount }) =>
+    request("/admin/locations/", {
+      method: "POST",
+      token,
+      body: { name, court_count: courtCount },
+    }),
+  editLocation: (token, locationId, { name, isActive }) =>
+    request(`/admin/locations/${locationId}/`, {
+      method: "PATCH",
+      token,
+      body: { name, is_active: isActive },
+    }),
+  setCourtCount: (token, locationId, count) =>
+    request(`/admin/locations/${locationId}/court-count/`, {
+      method: "POST",
+      token,
+      body: { count },
+    }),
+  getLoginHistory: (token, filters) =>
+    request(`/admin/history/logins/${qs(filters)}`, { token }),
+  getCourtActivityHistory: (token, filters) =>
+    request(`/admin/history/court-activity/${qs(filters)}`, { token }),
 };

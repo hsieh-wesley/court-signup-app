@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { useFacility } from "../LocationContext";
 import { api } from "../apiClient";
 
 function formatSeconds(total) {
@@ -61,23 +63,37 @@ function CourtColumn({ court }) {
 }
 
 export default function BoardPage() {
+  // A TV/kiosk display can bookmark ?location_id=N directly (independent
+  // of whatever an interactive player's browser has selected); otherwise
+  // it falls back to the shared facility selection.
+  const [searchParams] = useSearchParams();
+  const urlLocationId = searchParams.get("location_id");
+  const { selectedLocationId, selectedLocation, locations } = useFacility();
+  const locationId = urlLocationId || selectedLocationId;
   const [courts, setCourts] = useState([]);
 
   useEffect(() => {
     async function refresh() {
-      const data = await api.getCourts();
+      const data = await api.getCourts(locationId);
       setCourts(data);
     }
     refresh();
     const interval = setInterval(refresh, 7000);
     return () => clearInterval(interval);
-  }, []);
+  }, [locationId]);
+
+  const locationName = urlLocationId
+    ? locations.find((l) => String(l.id) === String(urlLocationId))?.name
+    : selectedLocation?.name;
 
   return (
     <div className="board">
-      {courts.map((court) => (
-        <CourtColumn key={court.id} court={court} />
-      ))}
+      {locationName && <h1 className="board-title">{locationName}</h1>}
+      <div className="board-columns">
+        {courts.map((court) => (
+          <CourtColumn key={court.id} court={court} />
+        ))}
+      </div>
     </div>
   );
 }

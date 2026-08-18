@@ -115,10 +115,10 @@ def test_deactivate_court_clears_current_players_first():
     assert entry.status == QueueEntry.Status.COMPLETED
 
 
-def test_create_court_rejects_duplicate_name():
-    make_court("Court 9")
+def test_create_court_rejects_duplicate_number_at_same_location():
+    court = make_court()
     with pytest.raises(services.ServiceError):
-        admin_services.create_court("Court 9")
+        admin_services.create_court(court.location, number=court.number)
 
 
 # API-level checks for the same behaviors, via an admin-authenticated client
