@@ -84,9 +84,10 @@ class Court(models.Model):
 
 
 class PlayerSession(models.Model):
-    """An authenticated session, scoped to exactly one Location. A regular
-    player holds at most one of these system-wide at a time (enforced in
-    services.create_player_session); admins are exempt from that limit."""
+    """An authenticated, persistent session — admin-only under the public
+    kiosk model. Regular players never hold one: every kiosk action
+    (join/unsign/status) verifies credentials fresh instead. See
+    services.create_player_session and services.verify_pair_credentials."""
 
     key = models.CharField(max_length=40, unique=True, db_index=True)
     user = models.ForeignKey(
@@ -107,7 +108,20 @@ class PlayerSession(models.Model):
 
 
 class LoginLog(models.Model):
-    """Append-only. Never edited or deleted."""
+    """Append-only. Never edited or deleted.
+
+    Player authentication history for events NOT already fully represented
+    by a CourtActivityLog row — a successful court join already names both
+    players + facility + timestamp there, so logging it again here would be
+    redundant. Reserved for: an admin's persistent-session login, a My
+    Status credential check, and account registration (a point-in-time
+    fact about where an account was created, not a stored relationship —
+    the Player itself stays global and usable at any facility)."""
+
+    class Context(models.TextChoices):
+        ADMIN_LOGIN = "admin_login", "Admin login"
+        STATUS_CHECK = "status_check", "Status check"
+        REGISTRATION = "registration", "Registration"
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="login_logs"
@@ -117,6 +131,9 @@ class LoginLog(models.Model):
         Location, null=True, blank=True, on_delete=models.PROTECT, related_name="login_logs"
     )
     location_name = models.CharField(max_length=100, blank=True)
+    context = models.CharField(
+        max_length=20, choices=Context.choices, default=Context.ADMIN_LOGIN
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

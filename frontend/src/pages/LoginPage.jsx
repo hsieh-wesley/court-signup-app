@@ -3,8 +3,12 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../AuthContext";
 import { useFacility } from "../LocationContext";
 
+// Admin sign-in only — reached from the Admin corner link. Regular players
+// never use a login page under the public kiosk model (Join creates an
+// account without signing the kiosk in; Overview/My Status verify
+// credentials inline, per action, with nothing persisted).
 export default function LoginPage() {
-  const { login, isAdmin } = useAuth();
+  const { login } = useAuth();
   const { selectedLocationId } = useFacility();
   const navigate = useNavigate();
   const [username, setUsername] = useState("");
@@ -17,8 +21,8 @@ export default function LoginPage() {
     setError(null);
     setSubmitting(true);
     try {
-      const data = await login(username, password, selectedLocationId);
-      navigate(data.is_staff ? "/admin" : "/overview");
+      await login(username, password, selectedLocationId);
+      navigate("/admin");
     } catch (err) {
       setError(err.message);
     } finally {
@@ -28,12 +32,7 @@ export default function LoginPage() {
 
   return (
     <div className="page page-narrow">
-      <h1>Sign in</h1>
-      <p className="muted">
-        {isAdmin
-          ? "Administrator sign in."
-          : "Players usually don't need this page — create a username from Join, or sign in when joining a court from Overview."}
-      </p>
+      <h1>Administrator sign in</h1>
       <form onSubmit={handleSubmit} className="form">
         <label>
           Username

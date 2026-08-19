@@ -1,20 +1,16 @@
-import { useEffect, useState } from "react";
-import { useAuth } from "../AuthContext";
+import { useState } from "react";
+import { useFacility } from "../LocationContext";
 import { api } from "../apiClient";
 
 const PAIR_LABELS = ["Pair A", "Pair B"];
 
-function EntryCard({ entry, onUnsigned }) {
-  const [error, setError] = useState(null);
+function EntryCard({ entry, onUnsign }) {
   const [submittingPairId, setSubmittingPairId] = useState(null);
 
   async function handleUnsign(pair) {
-    setError(null);
     setSubmittingPairId(pair.id);
     try {
-      await onUnsigned(entry, pair.id);
-    } catch (err) {
-      setError(err.message);
+      await onUnsign(entry, pair.id);
     } finally {
       setSubmittingPairId(null);
     }
@@ -43,43 +39,95 @@ function EntryCard({ entry, onUnsigned }) {
           <li className="muted">Open slot — waiting for a pair to join</li>
         )}
       </ul>
-      {error && <p className="error">{error}</p>}
     </div>
   );
 }
 
+// My Status is a one-shot credential check, not a logged-in view — the
+// public kiosk never remembers who looked this up. Credentials are held
+// only in this component's local state for the duration of the lookup, so
+// unsign buttons can resubmit them without asking twice; refreshing the
+// page or navigating away forgets them completely.
 export default function StatusPage() {
-  const { token } = useAuth();
-  const [entries, setEntries] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { selectedLocationId } = useFacility();
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [checkedCredentials, setCheckedCredentials] = useState(null);
+  const [entries, setEntries] = useState(null);
+  const [error, setError] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  async function refresh() {
-    const data = await api.getMyStatus(token);
+  async function refresh(creds) {
+    const data = await api.checkStatus(creds.username, creds.password, selectedLocationId);
     setEntries(data);
-    setLoading(false);
   }
 
-  useEffect(() => {
-    refresh();
-    const interval = setInterval(refresh, 5000);
-    return () => clearInterval(interval);
-  }, [token]);
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    try {
+      const creds = { username: username.trim(), password };
+      await refresh(creds);
+      setCheckedCredentials(creds);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
+      setPassword("");
+    }
+  }
 
-  async function handleUnsigned(entry, pairId) {
-    await api.unsignPair(token, entry.id, pairId);
-    await refresh();
+  async function handleUnsign(entry, pairId) {
+    await api.unsignPair(entry.id, pairId, checkedCredentials.username, checkedCredentials.password);
+    await refresh(checkedCredentials);
+  }
+
+  function handleDone() {
+    setCheckedCredentials(null);
+    setEntries(null);
+    setUsername("");
+    setPassword("");
+  }
+
+  if (!checkedCredentials) {
+    return (
+      <div className="page page-narrow">
+        <h1>My status</h1>
+        <p className="muted">Enter your username and password to check your current court/queue status.</p>
+        <form onSubmit={handleSubmit} className="form">
+          <label>
+            Username
+            <input value={username} onChange={(e) => setUsername(e.target.value)} required />
+          </label>
+          <label>
+            Password
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+          </label>
+          {error && <p className="error">{error}</p>}
+          <button type="submit" disabled={submitting}>
+            {submitting ? "Checking…" : "Check status"}
+          </button>
+        </form>
+      </div>
+    );
   }
 
   return (
     <div className="page">
-      <h1>My status</h1>
-      {loading && <p>Loading…</p>}
-      {!loading && entries.length === 0 && <p className="muted">You're not in any queues.</p>}
+      <h1>My status — {checkedCredentials.username}</h1>
+      {entries.length === 0 && <p className="muted">You're not in any queues.</p>}
       <div className="card-grid">
         {entries.map((entry) => (
-          <EntryCard key={entry.id} entry={entry} onUnsigned={handleUnsigned} />
+          <EntryCard key={entry.id} entry={entry} onUnsign={handleUnsign} />
         ))}
       </div>
+      <button onClick={handleDone}>Done</button>
     </div>
   );
 }

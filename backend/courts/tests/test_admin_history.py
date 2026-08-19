@@ -1,6 +1,7 @@
 import pytest
 
-from courts import admin_services, services
+from courts import activity_log, admin_services, services
+from courts.models import LoginLog
 from courts.tests.factories import (
     authed_client,
     make_admin_user,
@@ -15,7 +16,7 @@ pytestmark = pytest.mark.django_db
 def test_admin_login_history_lists_logins():
     court = make_court()
     alice = make_user("alice")
-    services.create_player_session(alice, court.location)
+    activity_log.log_player_auth_event(alice, court.location, LoginLog.Context.STATUS_CHECK)
 
     admin = make_admin_user()
     client = authed_client(admin)
@@ -23,6 +24,7 @@ def test_admin_login_history_lists_logins():
     assert resp.status_code == 200
     assert len(resp.data) == 1
     assert resp.data[0]["username"] == "alice"
+    assert resp.data[0]["context"] == "status_check"
     assert "password" not in resp.data[0]
     assert "token" not in resp.data[0]
 
@@ -32,8 +34,8 @@ def test_admin_login_history_filters_by_location():
     other = make_location("Other")
     alice = make_user("alice")
     bob = make_user("bob")
-    services.create_player_session(alice, court.location)
-    services.create_player_session(bob, other)
+    activity_log.log_player_auth_event(alice, court.location, LoginLog.Context.STATUS_CHECK)
+    activity_log.log_player_auth_event(bob, other, LoginLog.Context.REGISTRATION)
 
     admin = make_admin_user()
     client = authed_client(admin)
@@ -41,6 +43,20 @@ def test_admin_login_history_filters_by_location():
     assert resp.status_code == 200
     assert len(resp.data) == 1
     assert resp.data[0]["username"] == "alice"
+
+
+def test_admin_login_history_filters_by_context():
+    court = make_court()
+    alice = make_user("alice")
+    activity_log.log_player_auth_event(alice, court.location, LoginLog.Context.STATUS_CHECK)
+    activity_log.log_player_auth_event(alice, court.location, LoginLog.Context.REGISTRATION)
+
+    admin = make_admin_user()
+    client = authed_client(admin)
+    resp = client.get("/api/admin/history/logins/?context=registration")
+    assert resp.status_code == 200
+    assert len(resp.data) == 1
+    assert resp.data[0]["context"] == "registration"
 
 
 def test_admin_court_activity_history_lists_events():

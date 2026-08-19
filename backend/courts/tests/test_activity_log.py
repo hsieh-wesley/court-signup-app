@@ -3,9 +3,9 @@ import datetime
 import pytest
 from django.utils import timezone
 
-from courts import admin_services, services
+from courts import activity_log, admin_services, services
 from courts.models import CourtActivityLog, LoginLog
-from courts.tests.factories import make_court, make_user, pair_for
+from courts.tests.factories import make_admin_user, make_court, make_user, pair_for
 
 pytestmark = pytest.mark.django_db
 
@@ -168,11 +168,74 @@ def test_location_rename_does_not_corrupt_old_log_snapshot():
     assert log.location_name != "Renamed Facility"
 
 
-def test_login_never_logs_password_or_token_string():
+def test_status_check_never_logs_password():
     court = make_court()
     alice = make_user("alice")
-    session = services.create_player_session(alice, court.location)
+    make_user("bob")
+    services.create_queue_entry(court=court, pairs=[["alice", "bob"]], created_by=alice)
+
+    user = services.verify_credential("alice", "pw12345")
+    activity_log.log_player_auth_event(user, court.location, LoginLog.Context.STATUS_CHECK)
+
+    log = LoginLog.objects.get(user=alice)
+    assert log.context == LoginLog.Context.STATUS_CHECK
+    assert "pw12345" not in vars(log).values()
+
+
+def test_admin_login_never_logs_password_or_token_string():
+    admin = make_admin_user()
+    court = make_court()
+    session = services.create_player_session(admin, court.location)
     # The log row has no field capable of holding a password/token at all —
     # confirm the session key itself never appears anywhere in the log table.
-    log = LoginLog.objects.get(user=alice)
+    log = LoginLog.objects.get(user=admin, context=LoginLog.Context.ADMIN_LOGIN)
     assert session.key not in vars(log).values()
+
+
+# Row 8: registration writes a REGISTRATION LoginLog row, no PlayerSession
+def test_registration_logs_context_with_facility_no_session():
+    from rest_framework.test import APIClient
+
+    from courts.models import PlayerSession
+
+    court = make_court()
+    client = APIClient()
+    resp = client.post(
+        "/api/players/register/",
+        {"username": "newplayer", "location_id": court.location_id},
+    )
+    assert resp.status_code == 201
+    assert "token" not in resp.data
+
+    log = LoginLog.objects.get(username="newplayer")
+    assert log.context == LoginLog.Context.REGISTRATION
+    assert log.location_id == court.location_id
+    assert PlayerSession.objects.count() == 0
+
+
+# Row 10: a successful court join does not create a redundant LoginLog row —
+# CourtActivityLog already fully represents it.
+def test_successful_join_creates_no_login_log_rows():
+    from rest_framework.test import APIClient
+
+    court = make_court()
+    make_user("alice")
+    make_user("bob")
+
+    client = APIClient()
+    resp = client.post(
+        "/api/queue-entries/",
+        {
+            "court_id": court.id,
+            "pairs": [[
+                {"username": "alice", "password": "pw12345"},
+                {"username": "bob", "password": "pw12345"},
+            ]],
+        },
+        format="json",
+    )
+    assert resp.status_code == 201
+    assert LoginLog.objects.count() == 0
+    assert CourtActivityLog.objects.filter(
+        event_type=CourtActivityLog.EventType.PAIR_ACTIVATED
+    ).count() == 1

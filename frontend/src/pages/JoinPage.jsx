@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "../AuthContext";
 import { useFacility } from "../LocationContext";
 import { api } from "../apiClient";
 
 const PASSWORD_VISIBLE_MS = 10000;
 
+// Self-service account creation. Deliberately does not touch AuthContext —
+// creating an account here never signs the public kiosk in as that player.
 export default function JoinPage() {
-  const { register } = useAuth();
   const { selectedLocationId, selectedLocation } = useFacility();
   const navigate = useNavigate();
   const [username, setUsername] = useState("");
@@ -47,7 +47,7 @@ export default function JoinPage() {
     setError(null);
     setSubmitting(true);
     try {
-      const data = await register(username.trim(), selectedLocationId);
+      const data = await api.registerPlayer(username.trim(), selectedLocationId);
       setCreatedPassword(data.password);
     } catch (err) {
       setError(err.message);

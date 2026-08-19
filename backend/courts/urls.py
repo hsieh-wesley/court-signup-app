@@ -14,7 +14,7 @@ urlpatterns = [
         name="player-check-username",
     ),
     path("courts/", views.CourtListView.as_view(), name="court-list"),
-    path("me/status/", views.MyStatusView.as_view(), name="my-status"),
+    path("me/status/", views.PlayerStatusView.as_view(), name="my-status"),
     path("queue-entries/", views.QueueEntryCreateView.as_view(), name="queue-entry-create"),
     path(
         "queue-entries/<int:pk>/join/",

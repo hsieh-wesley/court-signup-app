@@ -43,30 +43,35 @@ export const api = {
   logout: (token) => request("/auth/logout/", { method: "POST", token }),
   getLocations: () => request("/locations/"),
   checkUsername: (username) => request(`/players/check-username/${qs({ username })}`),
+  // Creates the account; never returns a session — the kiosk never ends
+  // up "logged in" as the new player.
   registerPlayer: (username, locationId) =>
     request("/players/register/", {
       method: "POST",
       body: { username, location_id: locationId },
     }),
   getCourts: (locationId) => request(`/courts/${qs({ location_id: locationId })}`),
-  getMyStatus: (token) => request("/me/status/", { token }),
-  joinQueue: (token, courtId, pairs) =>
+  // Public kiosk endpoints below take credentials directly in the body —
+  // no token, nothing persisted client-side.
+  checkStatus: (username, password, locationId) =>
+    request("/me/status/", {
+      method: "POST",
+      body: { username, password, location_id: locationId },
+    }),
+  joinQueue: (courtId, pairs) =>
     request("/queue-entries/", {
       method: "POST",
-      token,
       body: { court_id: courtId, pairs },
     }),
-  joinOpenSlot: (token, entryId, credentials) =>
+  joinOpenSlot: (entryId, credentials) =>
     request(`/queue-entries/${entryId}/join/`, {
       method: "POST",
-      token,
       body: { credentials },
     }),
-  unsignPair: (token, entryId, pairId) =>
+  unsignPair: (entryId, pairId, username, password) =>
     request(`/queue-entries/${entryId}/unsign/`, {
       method: "POST",
-      token,
-      body: { pair_id: pairId },
+      body: { pair_id: pairId, username, password },
     }),
 };
 

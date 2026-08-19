@@ -8,12 +8,6 @@ import StatusPage from "./pages/StatusPage";
 import BoardPage from "./pages/BoardPage";
 import AdminPage from "./pages/AdminPage";
 
-function RequireAuth({ children }) {
-  const { token } = useAuth();
-  if (!token) return <Navigate to="/login" replace />;
-  return children;
-}
-
 function RequireAdmin({ children }) {
   const { token, isAdmin } = useAuth();
   if (!token || !isAdmin) return <Navigate to="/login" replace />;
@@ -44,18 +38,20 @@ function FacilityHeader() {
 }
 
 function Nav() {
+  // `token`/`username` here only ever represent an Admin session — regular
+  // players never hold one under the public kiosk model.
   const { token, username, isAdmin, logout } = useAuth();
   return (
     <nav className="nav">
       <span className="brand">Court Signup</span>
       <NavLink to="/join">Join</NavLink>
       <NavLink to="/overview">Overview</NavLink>
-      {token && <NavLink to="/status">My Status</NavLink>}
+      <NavLink to="/status">My Status</NavLink>
       <LocationSwitcher />
       <span className="spacer" />
-      {token ? (
+      {token && isAdmin ? (
         <>
-          <span className="muted">{username}</span>
+          <span className="muted">Admin: {username}</span>
           <button onClick={logout}>Log out</button>
         </>
       ) : null}
@@ -82,14 +78,7 @@ export default function App() {
                   <Route path="/login" element={<LoginPage />} />
                   <Route path="/join" element={<JoinPage />} />
                   <Route path="/overview" element={<OverviewPage />} />
-                  <Route
-                    path="/status"
-                    element={
-                      <RequireAuth>
-                        <StatusPage />
-                      </RequireAuth>
-                    }
-                  />
+                  <Route path="/status" element={<StatusPage />} />
                   <Route
                     path="/admin"
                     element={

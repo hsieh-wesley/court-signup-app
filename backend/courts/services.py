@@ -7,7 +7,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from . import activity_log
-from .models import Court, CourtActivityLog, Pair, PlayerSession, QueueEntry
+from .models import Court, CourtActivityLog, LoginLog, Pair, PlayerSession, QueueEntry
 
 User = get_user_model()
 
@@ -267,54 +267,75 @@ def unsign_pair(entry, pair_id, requesting_user):
     return entry
 
 
-def verify_pair_credentials(pairs_credentials, requesting_user):
+def _check_not_expired(user):
+    player = getattr(user, "player", None)
+    if player is not None and player.is_expired:
+        raise ServiceError("This account has expired.", status=403)
+
+
+def _reject_if_active_elsewhere(user, target_location):
+    """A player can't be active/waiting at two facilities at once. Under
+    the public-kiosk model there's no login moment to check this at, so
+    it's enforced here — at the point of joining — instead."""
+    conflict = (
+        Pair.objects.filter(
+            Q(player_1=user) | Q(player_2=user),
+            entry__status__in=[QueueEntry.Status.WAITING, QueueEntry.Status.ACTIVE],
+        )
+        .exclude(entry__court__location=target_location)
+        .select_related("entry__court__location")
+        .first()
+    )
+    if conflict:
+        loc = conflict.entry.court.location
+        court = conflict.entry.court
+        raise ServiceError(
+            f"{user.username} is still signed in at {loc.name} (Court {court.number}).",
+            status=409,
+        )
+
+
+def verify_credential(username, password):
+    """Verifies one player's identity fresh, for actions with no persisted
+    session to rely on (unsign, status check). Raises ServiceError if the
+    credentials are wrong or the account has expired."""
+    user = authenticate(username=username, password=password)
+    if user is None:
+        raise ServiceError(f"Incorrect username or password for {username}.")
+    _check_not_expired(user)
+    return user
+
+
+def verify_pair_credentials(pairs_credentials, target_location):
     """`pairs_credentials` is a list of 1-2 groups, each a list of 2
-    {"username", "password"} dicts. Every member's password is verified via
-    Django's authenticate() except the requesting (already session-
-    authenticated) user's own. Returns the equivalent plain
-    [[username, username], ...] structure for services.create_queue_entry /
-    join_open_slot, which are otherwise unchanged."""
+    {"username", "password"} dicts. Every member's credentials are verified
+    — there is no "self" exemption, since the public kiosk has no notion of
+    who's already signed in. Also enforces the single-facility invariant
+    for each verified player against `target_location`. Returns the
+    equivalent plain [[username, username], ...] structure for
+    services.create_queue_entry / join_open_slot, which are unchanged."""
     result = []
     for group in pairs_credentials:
         usernames = []
         for member in group:
             username = member.get("username", "")
-            if username != requesting_user.username:
-                password = member.get("password", "")
-                verified = authenticate(username=username, password=password)
-                if verified is None:
-                    raise ServiceError(f"Incorrect username or password for {username}.")
+            password = member.get("password", "")
+            user = verify_credential(username, password)
+            _reject_if_active_elsewhere(user, target_location)
             usernames.append(username)
         result.append(usernames)
     return result
 
 
-def create_player_session(user, location):
-    """Authenticates `user` for `location`. Regular players are limited to
-    one active session system-wide: if they currently hold an active/
-    waiting pair at a *different* location, the switch is rejected (409)
-    rather than silently ending their game there. Admins are exempt from
-    both the conflict check and the single-session limit."""
+def create_player_session(user, location=None):
+    """Admin-only. Regular players never hold a persistent session under
+    the public-kiosk model — every kiosk action verifies credentials fresh
+    instead (see verify_pair_credentials/verify_credential above). Admins
+    may hold multiple concurrent sessions (e.g. multiple devices/tabs) —
+    no single-session limit applies to them, so a new login never deletes
+    an existing admin session."""
     if not user.is_staff:
-        conflict = (
-            Pair.objects.filter(
-                Q(player_1=user) | Q(player_2=user),
-                entry__status__in=[QueueEntry.Status.WAITING, QueueEntry.Status.ACTIVE],
-            )
-            .exclude(entry__court__location=location)
-            .select_related("entry__court__location")
-            .first()
-        )
-        if conflict:
-            loc = conflict.entry.court.location
-            court = conflict.entry.court
-            raise ServiceError(
-                f"Still signed in at {loc.name} (Court {court.number}). "
-                f"Leave that court before switching facilities.",
-                status=409,
-            )
-        PlayerSession.objects.filter(user=user).delete()
-
+        raise ServiceError("Player accounts do not use persistent sessions.")
     session = PlayerSession.objects.create(user=user, location=location)
-    activity_log.log_login(user, location)
+    activity_log.log_player_auth_event(user, location, LoginLog.Context.ADMIN_LOGIN)
     return session

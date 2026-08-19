@@ -78,12 +78,12 @@ class CourtBoardSerializer(serializers.ModelSerializer):
 
 
 class PlayerCredentialSerializer(serializers.Serializer):
-    """One pair member's identity for a join/create action. `password` is
-    only required for players other than the token-authenticated requester
-    — theirs is skipped since their session already proves identity."""
+    """One pair member's identity for a join/create action. The public
+    kiosk has no notion of who's already signed in, so every player's
+    password is always required — no exemption."""
 
     username = serializers.CharField(max_length=150)
-    password = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    password = serializers.CharField(max_length=150)
 
 
 class CreateQueueEntrySerializer(serializers.Serializer):
@@ -112,4 +112,18 @@ class JoinOpenSlotSerializer(serializers.Serializer):
 
 
 class UnsignSerializer(serializers.Serializer):
+    """Identity comes from credentials, not a session — the existing
+    'must be a current member of this entry' rule in services.unsign_pair
+    runs against whichever user these verify to."""
+
     pair_id = serializers.IntegerField()
+    username = serializers.CharField(max_length=150)
+    password = serializers.CharField(max_length=150)
+
+
+class PlayerStatusSerializer(serializers.Serializer):
+    username = serializers.CharField(max_length=150)
+    password = serializers.CharField(max_length=150)
+    location_id = serializers.PrimaryKeyRelatedField(
+        queryset=Location.objects.all(), required=False, allow_null=True, default=None
+    )

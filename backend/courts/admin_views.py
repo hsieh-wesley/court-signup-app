@@ -275,6 +275,9 @@ class AdminLoginHistoryView(APIView):
         username = request.query_params.get("username")
         if username:
             qs = qs.filter(username=username)
+        context = request.query_params.get("context")
+        if context:
+            qs = qs.filter(context=context)
         date = request.query_params.get("date")
         if date:
             qs = qs.filter(created_at__date=date)

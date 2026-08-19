@@ -60,8 +60,8 @@ class QueueEntryAdmin(admin.ModelAdmin):
 
 @admin.register(LoginLog)
 class LoginLogAdmin(admin.ModelAdmin):
-    list_display = ("username", "location_name", "created_at")
-    list_filter = ("location",)
+    list_display = ("username", "context", "location_name", "created_at")
+    list_filter = ("context", "location")
     readonly_fields = [f.name for f in LoginLog._meta.fields]
 
     def has_add_permission(self, request):

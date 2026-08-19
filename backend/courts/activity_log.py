@@ -1,12 +1,13 @@
 from .models import CourtActivityLog, LoginLog
 
 
-def log_login(user, location):
+def log_player_auth_event(user, location, context):
     LoginLog.objects.create(
         user=user,
         username=user.username,
         location=location,
         location_name=location.name if location else "",
+        context=context,
     )
 
 

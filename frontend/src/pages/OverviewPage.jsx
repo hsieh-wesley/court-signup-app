@@ -1,17 +1,15 @@
 import { useEffect, useState } from "react";
-import { useAuth } from "../AuthContext";
 import { useFacility } from "../LocationContext";
 import { api } from "../apiClient";
 
+// The Overview kiosk has no notion of "who's using it" — this modal always
+// collects both players' full credentials, verifies them on submit, and
+// clears itself immediately after. Nothing is ever persisted client-side.
 function CourtJoinModal({ court, entry, onClose, onJoined }) {
-  const { token, username, sessionLocationId, login } = useAuth();
-  const { selectedLocationId } = useFacility();
-  const authenticatedHere = !!token && String(sessionLocationId) === String(selectedLocationId);
-
-  const [selfUsername, setSelfUsername] = useState(username || "");
-  const [selfPassword, setSelfPassword] = useState("");
-  const [partnerUsername, setPartnerUsername] = useState("");
-  const [partnerPassword, setPartnerPassword] = useState("");
+  const [p1Username, setP1Username] = useState("");
+  const [p1Password, setP1Password] = useState("");
+  const [p2Username, setP2Username] = useState("");
+  const [p2Password, setP2Password] = useState("");
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -20,22 +18,21 @@ function CourtJoinModal({ court, entry, onClose, onJoined }) {
     setError(null);
     setSubmitting(true);
     try {
-      let activeToken = token;
-      let activeUsername = username;
-      if (!authenticatedHere) {
-        const data = await login(selfUsername.trim(), selfPassword, selectedLocationId);
-        activeToken = data.token;
-        activeUsername = data.username;
-      }
       const credentials = [
-        { username: activeUsername },
-        { username: partnerUsername.trim(), password: partnerPassword },
+        { username: p1Username.trim(), password: p1Password },
+        { username: p2Username.trim(), password: p2Password },
       ];
       if (entry) {
-        await api.joinOpenSlot(activeToken, entry.id, credentials);
+        await api.joinOpenSlot(entry.id, credentials);
       } else {
-        await api.joinQueue(activeToken, court.id, [credentials]);
+        await api.joinQueue(court.id, [credentials]);
       }
+      // Clear immediately — success or not, nothing about who typed this
+      // should linger once the dialog is done with it.
+      setP1Username("");
+      setP1Password("");
+      setP2Username("");
+      setP2Password("");
       onJoined();
       onClose();
     } catch (err) {
@@ -50,46 +47,38 @@ function CourtJoinModal({ court, entry, onClose, onJoined }) {
       <div className="modal card" onClick={(e) => e.stopPropagation()}>
         <h3>{entry ? `Join the waiting pair on ${court.name}` : `Start ${court.name}`}</h3>
         <form onSubmit={handleSubmit} className="form">
-          {!authenticatedHere ? (
-            <>
-              <label>
-                Your username
-                <input
-                  value={selfUsername}
-                  onChange={(e) => setSelfUsername(e.target.value)}
-                  required
-                />
-              </label>
-              <label>
-                Your password
-                <input
-                  type="password"
-                  value={selfPassword}
-                  onChange={(e) => setSelfPassword(e.target.value)}
-                  required
-                />
-              </label>
-            </>
-          ) : (
-            <p className="muted">Signed in as {username}</p>
-          )}
-          <label>
-            Partner's username
-            <input
-              value={partnerUsername}
-              onChange={(e) => setPartnerUsername(e.target.value)}
-              required
-            />
-          </label>
-          <label>
-            Partner's password
-            <input
-              type="password"
-              value={partnerPassword}
-              onChange={(e) => setPartnerPassword(e.target.value)}
-              required
-            />
-          </label>
+          <fieldset>
+            <legend>Player 1</legend>
+            <label>
+              Username
+              <input value={p1Username} onChange={(e) => setP1Username(e.target.value)} required />
+            </label>
+            <label>
+              Password
+              <input
+                type="password"
+                value={p1Password}
+                onChange={(e) => setP1Password(e.target.value)}
+                required
+              />
+            </label>
+          </fieldset>
+          <fieldset>
+            <legend>Player 2</legend>
+            <label>
+              Username
+              <input value={p2Username} onChange={(e) => setP2Username(e.target.value)} required />
+            </label>
+            <label>
+              Password
+              <input
+                type="password"
+                value={p2Password}
+                onChange={(e) => setP2Password(e.target.value)}
+                required
+              />
+            </label>
+          </fieldset>
           {error && <p className="error">{error}</p>}
           <div className="mode-toggle">
             <button type="submit" disabled={submitting}>
@@ -105,13 +94,9 @@ function CourtJoinModal({ court, entry, onClose, onJoined }) {
   );
 }
 
-function CourtCard({ court, myUsername, onPick, onUnsign }) {
+function CourtCard({ court, onPick }) {
   const active = court.active_entry;
   const openWaiting = court.waiting_entries.find((e) => e.open_slot);
-
-  function pairContainsMe(pair) {
-    return myUsername && pair.players.includes(myUsername);
-  }
 
   function joinTarget() {
     if (!active) return { court, entry: null };
@@ -137,13 +122,7 @@ function CourtCard({ court, myUsername, onPick, onUnsign }) {
           <ul className="pair-list">
             {active.pairs.map((pair) => (
               <li key={pair.id}>
-                <span>
-                  {pair.players.join(" & ")}
-                  {pairContainsMe(pair) && <span className="badge">You</span>}
-                </span>
-                {pairContainsMe(pair) && (
-                  <button onClick={() => onUnsign(active.id, pair.id)}>Unsign</button>
-                )}
+                <span>{pair.players.join(" & ")}</span>
               </li>
             ))}
           </ul>
@@ -161,15 +140,6 @@ function CourtCard({ court, myUsername, onPick, onUnsign }) {
                   {entry.pairs.map((p) => p.players.join(" & ")).join(" + ")}
                   {entry.open_slot && <span className="badge">Open slot</span>}
                 </span>
-                {entry.pairs.some(pairContainsMe) && (
-                  <button
-                    onClick={() =>
-                      onUnsign(entry.id, entry.pairs.find(pairContainsMe).id)
-                    }
-                  >
-                    Unsign
-                  </button>
-                )}
               </li>
             ))}
           </ul>
@@ -185,11 +155,9 @@ function CourtCard({ court, myUsername, onPick, onUnsign }) {
 }
 
 export default function OverviewPage() {
-  const { token, username } = useAuth();
   const { selectedLocationId, selectedLocation } = useFacility();
   const [courts, setCourts] = useState([]);
   const [modalTarget, setModalTarget] = useState(null);
-  const [error, setError] = useState(null);
 
   async function refresh() {
     if (!selectedLocationId) return;
@@ -203,16 +171,6 @@ export default function OverviewPage() {
     return () => clearInterval(interval);
   }, [selectedLocationId]);
 
-  async function handleUnsign(entryId, pairId) {
-    setError(null);
-    try {
-      await api.unsignPair(token, entryId, pairId);
-      await refresh();
-    } catch (err) {
-      setError(err.message);
-    }
-  }
-
   if (!selectedLocation) {
     return (
       <div className="page">
@@ -223,16 +181,9 @@ export default function OverviewPage() {
 
   return (
     <div className="page">
-      {error && <p className="error">{error}</p>}
       <div className="card-grid">
         {courts.map((court) => (
-          <CourtCard
-            key={court.id}
-            court={court}
-            myUsername={username}
-            onPick={setModalTarget}
-            onUnsign={handleUnsign}
-          />
+          <CourtCard key={court.id} court={court} onPick={setModalTarget} />
         ))}
       </div>
       {modalTarget && (

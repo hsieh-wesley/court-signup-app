@@ -5,14 +5,14 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from . import admin_services, services
-from .models import Court, Location, QueueEntry
-from .permissions import TempAccountNotExpired
+from . import activity_log, admin_services, services
+from .models import Court, Location, LoginLog, QueueEntry
 from .serializers import (
     CourtBoardSerializer,
     CreateQueueEntrySerializer,
     JoinOpenSlotSerializer,
     LocationSerializer,
+    PlayerStatusSerializer,
     QueueEntrySerializer,
     UnsignSerializer,
 )
@@ -21,6 +21,10 @@ User = get_user_model()
 
 
 class LoginView(APIView):
+    """Admin sign-in only. Regular players never call this under the public
+    kiosk model — see RegisterPlayerView / QueueEntryCreateView / etc.,
+    which verify credentials fresh on every action instead of a session."""
+
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -47,10 +51,6 @@ class LoginView(APIView):
                 location = Location.objects.get(pk=location_id)
             except Location.DoesNotExist:
                 return Response({"detail": "Unknown location."}, status=status.HTTP_400_BAD_REQUEST)
-        elif not user.is_staff:
-            return Response(
-                {"detail": "location_id is required."}, status=status.HTTP_400_BAD_REQUEST
-            )
 
         try:
             session = services.create_player_session(user, location)
@@ -92,6 +92,11 @@ class CheckUsernameView(APIView):
 
 
 class RegisterPlayerView(APIView):
+    """Creates a Player account. Never leaves the kiosk signed in — no
+    PlayerSession is created. `location_id` is only used to record a
+    REGISTRATION history entry (which facility the kiosk was showing at
+    creation time); the account itself stays global and usable anywhere."""
+
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -115,16 +120,10 @@ class RegisterPlayerView(APIView):
         except services.ServiceError as exc:
             return Response({"detail": str(exc)}, status=exc.status)
 
-        session = services.create_player_session(player.user, location)
+        activity_log.log_player_auth_event(player.user, location, LoginLog.Context.REGISTRATION)
+
         return Response(
-            {
-                "token": session.key,
-                "username": player.user.username,
-                "password": plaintext,
-                "is_staff": False,
-                "location_id": location.id,
-                "location_name": location.name,
-            },
+            {"username": player.user.username, "password": plaintext},
             status=status.HTTP_201_CREATED,
         )
 
@@ -144,15 +143,31 @@ class CourtListView(APIView):
         return Response(CourtBoardSerializer(courts, many=True).data)
 
 
-class MyStatusView(APIView):
-    permission_classes = [IsAuthenticated, TempAccountNotExpired]
+class PlayerStatusView(APIView):
+    """Public kiosk equivalent of a 'my status' page: verify credentials
+    fresh (nothing persisted), return that player's current entries.
+    `location_id` is optional and only used to record a STATUS_CHECK
+    history entry against the facility the kiosk was showing."""
 
-    def get(self, request):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = PlayerStatusSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        try:
+            user = services.verify_credential(data["username"], data["password"])
+        except services.ServiceError as exc:
+            return Response({"detail": str(exc)}, status=exc.status)
+
+        activity_log.log_player_auth_event(
+            user, data.get("location_id"), LoginLog.Context.STATUS_CHECK
+        )
+
         entries = (
             QueueEntry.objects.filter(
-                Q(pairs__player_1=request.user) | Q(pairs__player_2=request.user),
+                Q(pairs__player_1=user) | Q(pairs__player_2=user),
                 status__in=[QueueEntry.Status.WAITING, QueueEntry.Status.ACTIVE],
-                court__location=request.auth.location,
             )
             .distinct()
             .order_by("created_at", "id")
@@ -161,23 +176,22 @@ class MyStatusView(APIView):
 
 
 class QueueEntryCreateView(APIView):
-    permission_classes = [IsAuthenticated, TempAccountNotExpired]
+    """Public kiosk endpoint — no session. Every named player's credentials
+    are verified fresh in this one request; there's no 'self' exemption."""
+
+    permission_classes = [AllowAny]
 
     def post(self, request):
         serializer = CreateQueueEntrySerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         court = serializer.validated_data["court_id"]
-        if court.location_id != request.auth.location_id:
-            return Response(
-                {"detail": "This court belongs to a different facility."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
         try:
             pairs = services.verify_pair_credentials(
-                serializer.validated_data["pairs"], request.user
+                serializer.validated_data["pairs"], court.location
             )
+            created_by = User.objects.get(username=pairs[0][0])
             entry = services.create_queue_entry(
-                court=court, pairs=pairs, created_by=request.user
+                court=court, pairs=pairs, created_by=created_by
             )
         except services.ServiceError as exc:
             return Response({"detail": str(exc)}, status=exc.status)
@@ -187,7 +201,7 @@ class QueueEntryCreateView(APIView):
 
 
 class JoinOpenSlotView(APIView):
-    permission_classes = [IsAuthenticated, TempAccountNotExpired]
+    permission_classes = [AllowAny]
 
     def post(self, request, pk):
         try:
@@ -196,19 +210,15 @@ class JoinOpenSlotView(APIView):
             return Response(
                 {"detail": "Queue entry not found."}, status=status.HTTP_404_NOT_FOUND
             )
-        if entry.court.location_id != request.auth.location_id:
-            return Response(
-                {"detail": "This court belongs to a different facility."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
         serializer = JoinOpenSlotSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
             usernames = services.verify_pair_credentials(
-                [serializer.validated_data["credentials"]], request.user
+                [serializer.validated_data["credentials"]], entry.court.location
             )[0]
+            requesting_user = User.objects.get(username=usernames[0])
             entry = services.join_open_slot(
-                entry=entry, usernames=usernames, requesting_user=request.user
+                entry=entry, usernames=usernames, requesting_user=requesting_user
             )
         except services.ServiceError as exc:
             return Response({"detail": str(exc)}, status=exc.status)
@@ -216,7 +226,10 @@ class JoinOpenSlotView(APIView):
 
 
 class UnsignView(APIView):
-    permission_classes = [IsAuthenticated, TempAccountNotExpired]
+    """Public kiosk endpoint — identity comes from credentials submitted
+    alongside pair_id (e.g. from the My Status flow), not a session."""
+
+    permission_classes = [AllowAny]
 
     def post(self, request, pk):
         try:
@@ -225,17 +238,13 @@ class UnsignView(APIView):
             return Response(
                 {"detail": "Queue entry not found."}, status=status.HTTP_404_NOT_FOUND
             )
-        if entry.court.location_id != request.auth.location_id:
-            return Response(
-                {"detail": "This court belongs to a different facility."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
         serializer = UnsignSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        pair_id = serializer.validated_data["pair_id"]
+        data = serializer.validated_data
         try:
+            requesting_user = services.verify_credential(data["username"], data["password"])
             entry = services.unsign_pair(
-                entry=entry, pair_id=pair_id, requesting_user=request.user
+                entry=entry, pair_id=data["pair_id"], requesting_user=requesting_user
             )
         except services.ServiceError as exc:
             return Response({"detail": str(exc)}, status=exc.status)

@@ -1,7 +1,7 @@
 import pytest
 from rest_framework.test import APIClient
 
-from courts.tests.factories import authed_client, default_location, make_admin_user, make_user
+from courts.tests.factories import authed_client, make_admin_user, make_user
 
 pytestmark = pytest.mark.django_db
 
@@ -68,12 +68,10 @@ def test_login_response_reports_is_staff():
     assert resp.data["is_staff"] is True
 
 
-def test_login_response_is_staff_false_for_normal_player():
+# Regular players don't get persistent sessions at all under the public
+# kiosk model — /auth/login/ is admin-only now.
+def test_login_rejected_for_normal_player():
     make_user("alice")
     client = APIClient()
-    resp = client.post(
-        "/api/auth/login/",
-        {"username": "alice", "password": "pw12345", "location_id": default_location().id},
-    )
-    assert resp.status_code == 200
-    assert resp.data["is_staff"] is False
+    resp = client.post("/api/auth/login/", {"username": "alice", "password": "pw12345"})
+    assert resp.status_code == 400

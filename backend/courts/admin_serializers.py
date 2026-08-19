@@ -73,7 +73,7 @@ class AdminLocationSerializer(serializers.ModelSerializer):
 class LoginLogSerializer(serializers.ModelSerializer):
     class Meta:
         model = LoginLog
-        fields = ["id", "username", "location_name", "created_at"]
+        fields = ["id", "username", "location_name", "context", "created_at"]
 
 
 class CourtActivityLogSerializer(serializers.ModelSerializer):
