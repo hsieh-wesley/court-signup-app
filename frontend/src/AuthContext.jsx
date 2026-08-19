@@ -4,10 +4,10 @@ import { api } from "./apiClient";
 const AuthContext = createContext(null);
 
 // Admin-only. Under the public kiosk model, regular players never hold a
-// persistent session — every Join/Overview/My Status action verifies
-// credentials fresh instead (see apiClient's checkStatus/joinQueue/
-// joinOpenSlot/unsignPair, none of which take a token). This context only
-// ever represents the Admin corner's authenticated session.
+// persistent session — every Join/Overview action verifies credentials
+// fresh instead (see apiClient's joinQueue/joinOpenSlot/quickUnsign, none
+// of which take a token). This context only ever represents the Admin
+// corner's authenticated session.
 export function AuthProvider({ children }) {
   const [token, setToken] = useState(() => localStorage.getItem("token"));
   const [username, setUsername] = useState(() => localStorage.getItem("username"));

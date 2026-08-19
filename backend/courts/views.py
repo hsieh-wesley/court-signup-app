@@ -14,6 +14,7 @@ from .serializers import (
     LocationSerializer,
     PlayerStatusSerializer,
     QueueEntrySerializer,
+    QuickUnsignSerializer,
     UnsignSerializer,
 )
 
@@ -227,7 +228,9 @@ class JoinOpenSlotView(APIView):
 
 class UnsignView(APIView):
     """Public kiosk endpoint — identity comes from credentials submitted
-    alongside pair_id (e.g. from the My Status flow), not a session."""
+    alongside pair_id, not a session. Superseded as the frontend's primary
+    unsign path by QuickUnsignView below (which doesn't require knowing a
+    pair_id), but still valid and still tested."""
 
     permission_classes = [AllowAny]
 
@@ -245,6 +248,26 @@ class UnsignView(APIView):
             requesting_user = services.verify_credential(data["username"], data["password"])
             entry = services.unsign_pair(
                 entry=entry, pair_id=data["pair_id"], requesting_user=requesting_user
+            )
+        except services.ServiceError as exc:
+            return Response({"detail": str(exc)}, status=exc.status)
+        return Response(QueueEntrySerializer(entry).data)
+
+
+class QuickUnsignView(APIView):
+    """The Overview kiosk's quick-unsign widget: both players' credentials,
+    no pair_id needed — services.unsign_pair_by_credentials finds their
+    shared pair and unsigns it."""
+
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = QuickUnsignSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        try:
+            entry = services.unsign_pair_by_credentials(
+                data["username1"], data["password1"], data["username2"], data["password2"]
             )
         except services.ServiceError as exc:
             return Response({"detail": str(exc)}, status=exc.status)

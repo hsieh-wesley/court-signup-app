@@ -267,6 +267,28 @@ def unsign_pair(entry, pair_id, requesting_user):
     return entry
 
 
+def unsign_pair_by_credentials(username1, password1, username2, password2):
+    """Quick-unsign entry point: both players' credentials in, no pair_id
+    needed. Verifies both (matching the same "both players prove it"
+    pattern used for joining, intentionally stricter than unsign_pair's
+    own any-current-member rule), finds their shared active/waiting pair,
+    and unsigns it via the existing unsign_pair — same CourtActivityLog
+    row, no logging changes needed."""
+    user1 = verify_credential(username1, password1)
+    user2 = verify_credential(username2, password2)
+    pair = (
+        Pair.objects.filter(
+            Q(player_1=user1, player_2=user2) | Q(player_1=user2, player_2=user1),
+            entry__status__in=[QueueEntry.Status.WAITING, QueueEntry.Status.ACTIVE],
+        )
+        .select_related("entry")
+        .first()
+    )
+    if pair is None:
+        raise ServiceError("You two aren't currently signed up together.")
+    return unsign_pair(pair.entry, pair.id, requesting_user=user1)
+
+
 def _check_not_expired(user):
     player = getattr(user, "player", None)
     if player is not None and player.is_expired:

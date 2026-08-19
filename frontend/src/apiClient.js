@@ -53,11 +53,6 @@ export const api = {
   getCourts: (locationId) => request(`/courts/${qs({ location_id: locationId })}`),
   // Public kiosk endpoints below take credentials directly in the body —
   // no token, nothing persisted client-side.
-  checkStatus: (username, password, locationId) =>
-    request("/me/status/", {
-      method: "POST",
-      body: { username, password, location_id: locationId },
-    }),
   joinQueue: (courtId, pairs) =>
     request("/queue-entries/", {
       method: "POST",
@@ -68,10 +63,12 @@ export const api = {
       method: "POST",
       body: { credentials },
     }),
-  unsignPair: (entryId, pairId, username, password) =>
-    request(`/queue-entries/${entryId}/unsign/`, {
+  // Looks up the shared pair from both players' credentials directly — no
+  // pair_id needed, used by Overview's compact Unsign widget.
+  quickUnsign: (username1, password1, username2, password2) =>
+    request("/pairs/unsign/", {
       method: "POST",
-      body: { pair_id: pairId, username, password },
+      body: { username1, password1, username2, password2 },
     }),
 };
 

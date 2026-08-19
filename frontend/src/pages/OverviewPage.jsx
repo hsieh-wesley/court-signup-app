@@ -2,37 +2,77 @@ import { useEffect, useState } from "react";
 import { useFacility } from "../LocationContext";
 import { api } from "../apiClient";
 
+function emptyPlayer() {
+  return { username: "", password: "" };
+}
+
+function PlayerFields({ label, player, onChange }) {
+  return (
+    <label>
+      {label}
+      <input
+        placeholder="username"
+        value={player.username}
+        onChange={(e) => onChange({ ...player, username: e.target.value })}
+        required
+      />
+      <input
+        placeholder="password"
+        type="password"
+        value={player.password}
+        onChange={(e) => onChange({ ...player, password: e.target.value })}
+        required
+      />
+    </label>
+  );
+}
+
 // The Overview kiosk has no notion of "who's using it" — this modal always
-// collects both players' full credentials, verifies them on submit, and
+// collects every player's full credentials, verifies them on submit, and
 // clears itself immediately after. Nothing is ever persisted client-side.
+// `entry === null` means "sign up as a new group" (2 or 4 players, your
+// choice — the backend decides active-vs-waiting automatically). A given
+// `entry` means "join this specific waiting pair's open slot" (always
+// exactly 2 players).
 function CourtJoinModal({ court, entry, onClose, onJoined }) {
-  const [p1Username, setP1Username] = useState("");
-  const [p1Password, setP1Password] = useState("");
-  const [p2Username, setP2Username] = useState("");
-  const [p2Password, setP2Password] = useState("");
+  const isCreate = entry === null;
+  const [groupSize, setGroupSize] = useState(2);
+  const [p1, setP1] = useState(emptyPlayer());
+  const [p2, setP2] = useState(emptyPlayer());
+  const [p3, setP3] = useState(emptyPlayer());
+  const [p4, setP4] = useState(emptyPlayer());
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+
+  function clearFields() {
+    setP1(emptyPlayer());
+    setP2(emptyPlayer());
+    setP3(emptyPlayer());
+    setP4(emptyPlayer());
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
     try {
-      const credentials = [
-        { username: p1Username.trim(), password: p1Password },
-        { username: p2Username.trim(), password: p2Password },
+      const pair1 = [
+        { username: p1.username.trim(), password: p1.password },
+        { username: p2.username.trim(), password: p2.password },
       ];
-      if (entry) {
-        await api.joinOpenSlot(entry.id, credentials);
+      if (isCreate) {
+        const pairs = [pair1];
+        if (groupSize === 4) {
+          pairs.push([
+            { username: p3.username.trim(), password: p3.password },
+            { username: p4.username.trim(), password: p4.password },
+          ]);
+        }
+        await api.joinQueue(court.id, pairs);
       } else {
-        await api.joinQueue(court.id, [credentials]);
+        await api.joinOpenSlot(entry.id, pair1);
       }
-      // Clear immediately — success or not, nothing about who typed this
-      // should linger once the dialog is done with it.
-      setP1Username("");
-      setP1Password("");
-      setP2Username("");
-      setP2Password("");
+      clearFields();
       onJoined();
       onClose();
     } catch (err) {
@@ -42,49 +82,56 @@ function CourtJoinModal({ court, entry, onClose, onJoined }) {
     }
   }
 
+  function handleCancel() {
+    clearFields();
+    onClose();
+  }
+
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop" onClick={handleCancel}>
       <div className="modal card" onClick={(e) => e.stopPropagation()}>
-        <h3>{entry ? `Join the waiting pair on ${court.name}` : `Start ${court.name}`}</h3>
+        <h3>
+          {isCreate
+            ? `Sign up for ${court.name}${court.active_entry ? " (joins the queue)" : ""}`
+            : `Join the waiting pair on ${court.name}`}
+        </h3>
+        {isCreate && (
+          <div className="mode-toggle">
+            <button
+              type="button"
+              className={groupSize === 2 ? "active" : ""}
+              onClick={() => setGroupSize(2)}
+            >
+              2 players
+            </button>
+            <button
+              type="button"
+              className={groupSize === 4 ? "active" : ""}
+              onClick={() => setGroupSize(4)}
+            >
+              4 players
+            </button>
+          </div>
+        )}
         <form onSubmit={handleSubmit} className="form">
           <fieldset>
-            <legend>Player 1</legend>
-            <label>
-              Username
-              <input value={p1Username} onChange={(e) => setP1Username(e.target.value)} required />
-            </label>
-            <label>
-              Password
-              <input
-                type="password"
-                value={p1Password}
-                onChange={(e) => setP1Password(e.target.value)}
-                required
-              />
-            </label>
+            <legend>{isCreate && groupSize === 4 ? "Pair A" : "Player 1 & 2"}</legend>
+            <PlayerFields label="Player 1" player={p1} onChange={setP1} />
+            <PlayerFields label="Player 2" player={p2} onChange={setP2} />
           </fieldset>
-          <fieldset>
-            <legend>Player 2</legend>
-            <label>
-              Username
-              <input value={p2Username} onChange={(e) => setP2Username(e.target.value)} required />
-            </label>
-            <label>
-              Password
-              <input
-                type="password"
-                value={p2Password}
-                onChange={(e) => setP2Password(e.target.value)}
-                required
-              />
-            </label>
-          </fieldset>
+          {isCreate && groupSize === 4 && (
+            <fieldset>
+              <legend>Pair B</legend>
+              <PlayerFields label="Player 3" player={p3} onChange={setP3} />
+              <PlayerFields label="Player 4" player={p4} onChange={setP4} />
+            </fieldset>
+          )}
           {error && <p className="error">{error}</p>}
           <div className="mode-toggle">
             <button type="submit" disabled={submitting}>
               {submitting ? "Joining…" : "Join"}
             </button>
-            <button type="button" onClick={onClose}>
+            <button type="button" onClick={handleCancel}>
               Cancel
             </button>
           </div>
@@ -94,17 +141,68 @@ function CourtJoinModal({ court, entry, onClose, onJoined }) {
   );
 }
 
-function CourtCard({ court, onPick }) {
-  const active = court.active_entry;
-  const openWaiting = court.waiting_entries.find((e) => e.open_slot);
+// Collapsed by default so the board stays clean — expands into the same
+// two-pair-of-credentials shape used everywhere else, clears on submit or
+// cancel, and never keeps anything after that.
+function QuickUnsignWidget({ onChanged }) {
+  const [expanded, setExpanded] = useState(false);
+  const [p1, setP1] = useState(emptyPlayer());
+  const [p2, setP2] = useState(emptyPlayer());
+  const [error, setError] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  function joinTarget() {
-    if (!active) return { court, entry: null };
-    if (openWaiting) return { court, entry: openWaiting };
-    return null;
+  function reset() {
+    setP1(emptyPlayer());
+    setP2(emptyPlayer());
+    setError(null);
+    setExpanded(false);
   }
 
-  const target = joinTarget();
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    try {
+      await api.quickUnsign(p1.username.trim(), p1.password, p2.username.trim(), p2.password);
+      reset();
+      onChanged();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (!expanded) {
+    return (
+      <button className="quick-unsign-toggle" onClick={() => setExpanded(true)}>
+        Unsign
+      </button>
+    );
+  }
+
+  return (
+    <div className="card quick-unsign-card">
+      <h3>Unsign</h3>
+      <form onSubmit={handleSubmit} className="form">
+        <PlayerFields label="Player 1" player={p1} onChange={setP1} />
+        <PlayerFields label="Player 2" player={p2} onChange={setP2} />
+        {error && <p className="error">{error}</p>}
+        <div className="mode-toggle">
+          <button type="submit" disabled={submitting}>
+            {submitting ? "Unsigning…" : "Unsign"}
+          </button>
+          <button type="button" onClick={reset}>
+            Cancel
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function CourtCard({ court, onPick }) {
+  const active = court.active_entry;
 
   return (
     <div className="card">
@@ -140,15 +238,16 @@ function CourtCard({ court, onPick }) {
                   {entry.pairs.map((p) => p.players.join(" & ")).join(" + ")}
                   {entry.open_slot && <span className="badge">Open slot</span>}
                 </span>
+                {entry.open_slot && (
+                  <button onClick={() => onPick({ court, entry })}>Join this pair</button>
+                )}
               </li>
             ))}
           </ul>
         </>
       )}
-      {court.is_active && target && (
-        <button onClick={() => onPick(target)}>
-          {target.entry ? "Join this pair" : "Start this court"}
-        </button>
+      {court.is_active && (
+        <button onClick={() => onPick({ court, entry: null })}>Sign Up</button>
       )}
     </div>
   );
@@ -181,6 +280,9 @@ export default function OverviewPage() {
 
   return (
     <div className="page">
+      <div className="overview-toolbar">
+        <QuickUnsignWidget onChanged={refresh} />
+      </div>
       <div className="card-grid">
         {courts.map((court) => (
           <CourtCard key={court.id} court={court} onPick={setModalTarget} />

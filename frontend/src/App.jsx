@@ -4,7 +4,6 @@ import { LocationProvider, useFacility } from "./LocationContext";
 import LoginPage from "./pages/LoginPage";
 import JoinPage from "./pages/JoinPage";
 import OverviewPage from "./pages/OverviewPage";
-import StatusPage from "./pages/StatusPage";
 import BoardPage from "./pages/BoardPage";
 import AdminPage from "./pages/AdminPage";
 
@@ -46,7 +45,6 @@ function Nav() {
       <span className="brand">Court Signup</span>
       <NavLink to="/join">Join</NavLink>
       <NavLink to="/overview">Overview</NavLink>
-      <NavLink to="/status">My Status</NavLink>
       <LocationSwitcher />
       <span className="spacer" />
       {token && isAdmin ? (
@@ -78,7 +76,6 @@ export default function App() {
                   <Route path="/login" element={<LoginPage />} />
                   <Route path="/join" element={<JoinPage />} />
                   <Route path="/overview" element={<OverviewPage />} />
-                  <Route path="/status" element={<StatusPage />} />
                   <Route
                     path="/admin"
                     element={

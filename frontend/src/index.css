@@ -129,6 +129,24 @@ button {
   gap: 1rem;
 }
 
+.overview-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 1rem;
+}
+
+.quick-unsign-toggle {
+  background: #fee2e2;
+  color: #991b1b;
+  border: none;
+  border-radius: 6px;
+}
+
+.quick-unsign-card {
+  max-width: 380px;
+  margin-left: auto;
+}
+
 .card {
   background: white;
   border-radius: 8px;

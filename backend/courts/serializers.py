@@ -127,3 +127,13 @@ class PlayerStatusSerializer(serializers.Serializer):
     location_id = serializers.PrimaryKeyRelatedField(
         queryset=Location.objects.all(), required=False, allow_null=True, default=None
     )
+
+
+class QuickUnsignSerializer(serializers.Serializer):
+    """No pair_id — services.unsign_pair_by_credentials looks up the shared
+    pair from both players' verified identities directly."""
+
+    username1 = serializers.CharField(max_length=150)
+    password1 = serializers.CharField(max_length=150)
+    username2 = serializers.CharField(max_length=150)
+    password2 = serializers.CharField(max_length=150)
