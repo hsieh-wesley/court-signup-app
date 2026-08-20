@@ -8,6 +8,7 @@ from rest_framework.views import APIView
 from . import activity_log, admin_services, services
 from .models import Court, Location, LoginLog, QueueEntry
 from .serializers import (
+    CheckInSerializer,
     CourtBoardSerializer,
     CreateQueueEntrySerializer,
     JoinOpenSlotSerializer,
@@ -255,20 +256,37 @@ class UnsignView(APIView):
 
 
 class QuickUnsignView(APIView):
-    """The Overview kiosk's quick-unsign widget: both players' credentials,
-    no pair_id needed — services.unsign_pair_by_credentials finds their
-    shared pair and unsigns it."""
+    """The Overview kiosk's quick-unsign widget: 1 or 2 groups of 2
+    players' credentials, no pair_id needed — services.unsign_by_credentials
+    finds each group's shared pair and unsigns them (validating, for a
+    4-player unsign, that both pairs belong to the same QueueEntry)."""
 
     permission_classes = [AllowAny]
 
     def post(self, request):
         serializer = QuickUnsignSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
         try:
-            entry = services.unsign_pair_by_credentials(
-                data["username1"], data["password1"], data["username2"], data["password2"]
-            )
+            entry = services.unsign_by_credentials(serializer.validated_data["pairs"])
         except services.ServiceError as exc:
             return Response({"detail": str(exc)}, status=exc.status)
         return Response(QueueEntrySerializer(entry).data)
+
+
+class CheckInView(APIView):
+    """Public kiosk endpoint for a returning player to explicitly mark
+    themselves present at a facility today, without creating a session."""
+
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = CheckInSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        try:
+            user = services.check_in_player(
+                data["username"], data["password"], data["location_id"]
+            )
+        except services.ServiceError as exc:
+            return Response({"detail": str(exc)}, status=exc.status)
+        return Response({"username": user.username})

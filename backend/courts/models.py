@@ -114,14 +114,19 @@ class LoginLog(models.Model):
     by a CourtActivityLog row — a successful court join already names both
     players + facility + timestamp there, so logging it again here would be
     redundant. Reserved for: an admin's persistent-session login, a My
-    Status credential check, and account registration (a point-in-time
-    fact about where an account was created, not a stored relationship —
-    the Player itself stays global and usable at any facility)."""
+    Status credential check, account registration (a point-in-time fact
+    about where an account was created, not a stored relationship — the
+    Player itself stays global and usable at any facility), and a
+    same-day facility check-in (explicit, or implied by the player's
+    first Sign Up/Join at a facility that day). REGISTRATION and CHECK_IN
+    rows are also what the derived Waiting Room status is computed from —
+    see AdminPlayerSerializer.get_status."""
 
     class Context(models.TextChoices):
         ADMIN_LOGIN = "admin_login", "Admin login"
         STATUS_CHECK = "status_check", "Status check"
         REGISTRATION = "registration", "Registration"
+        CHECK_IN = "check_in", "Check-in"
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="login_logs"

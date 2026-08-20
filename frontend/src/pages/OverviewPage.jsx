@@ -142,18 +142,24 @@ function CourtJoinModal({ court, entry, onClose, onJoined }) {
 }
 
 // Collapsed by default so the board stays clean — expands into the same
-// two-pair-of-credentials shape used everywhere else, clears on submit or
-// cancel, and never keeps anything after that.
+// 2-vs-4-player credentials shape CourtJoinModal uses for signing up,
+// clears on submit or cancel, and never keeps anything after that.
 function QuickUnsignWidget({ onChanged }) {
   const [expanded, setExpanded] = useState(false);
+  const [groupSize, setGroupSize] = useState(2);
   const [p1, setP1] = useState(emptyPlayer());
   const [p2, setP2] = useState(emptyPlayer());
+  const [p3, setP3] = useState(emptyPlayer());
+  const [p4, setP4] = useState(emptyPlayer());
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
   function reset() {
+    setGroupSize(2);
     setP1(emptyPlayer());
     setP2(emptyPlayer());
+    setP3(emptyPlayer());
+    setP4(emptyPlayer());
     setError(null);
     setExpanded(false);
   }
@@ -163,7 +169,19 @@ function QuickUnsignWidget({ onChanged }) {
     setError(null);
     setSubmitting(true);
     try {
-      await api.quickUnsign(p1.username.trim(), p1.password, p2.username.trim(), p2.password);
+      const pairs = [
+        [
+          { username: p1.username.trim(), password: p1.password },
+          { username: p2.username.trim(), password: p2.password },
+        ],
+      ];
+      if (groupSize === 4) {
+        pairs.push([
+          { username: p3.username.trim(), password: p3.password },
+          { username: p4.username.trim(), password: p4.password },
+        ]);
+      }
+      await api.quickUnsign(pairs);
       reset();
       onChanged();
     } catch (err) {
@@ -184,9 +202,35 @@ function QuickUnsignWidget({ onChanged }) {
   return (
     <div className="card quick-unsign-card">
       <h3>Unsign</h3>
+      <div className="mode-toggle">
+        <button
+          type="button"
+          className={groupSize === 2 ? "active" : ""}
+          onClick={() => setGroupSize(2)}
+        >
+          2 players
+        </button>
+        <button
+          type="button"
+          className={groupSize === 4 ? "active" : ""}
+          onClick={() => setGroupSize(4)}
+        >
+          4 players
+        </button>
+      </div>
       <form onSubmit={handleSubmit} className="form">
-        <PlayerFields label="Player 1" player={p1} onChange={setP1} />
-        <PlayerFields label="Player 2" player={p2} onChange={setP2} />
+        <fieldset>
+          <legend>{groupSize === 4 ? "Pair A" : "Player 1 & 2"}</legend>
+          <PlayerFields label="Player 1" player={p1} onChange={setP1} />
+          <PlayerFields label="Player 2" player={p2} onChange={setP2} />
+        </fieldset>
+        {groupSize === 4 && (
+          <fieldset>
+            <legend>Pair B</legend>
+            <PlayerFields label="Player 3" player={p3} onChange={setP3} />
+            <PlayerFields label="Player 4" player={p4} onChange={setP4} />
+          </fieldset>
+        )}
         {error && <p className="error">{error}</p>}
         <div className="mode-toggle">
           <button type="submit" disabled={submitting}>

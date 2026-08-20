@@ -5,10 +5,22 @@ from .models import Court, CourtActivityLog, Location, LoginLog, Pair, Player, Q
 
 
 class AdminPlayerSerializer(serializers.ModelSerializer):
+    """`status`/`court_number`/`checked_in_at` are computed from the
+    `assignments`/`checkins` maps the view builds once per request (see
+    admin_views._assignment_map/_checkin_map) rather than per-row, since a
+    player list is otherwise an easy N+1. `status` is priority-derived and
+    mutually exclusive: on_court > in_queue > waiting_room > not_checked_in.
+    On Court/In Queue are global (a player can only be active/waiting at one
+    facility at a time); Waiting Room/Not Checked In are evaluated against
+    whichever `location_id` the request asked for."""
+
     username = serializers.SerializerMethodField()
     has_login = serializers.ReadOnlyField()
     login_active = serializers.SerializerMethodField()
     current_assignment = serializers.SerializerMethodField()
+    status = serializers.SerializerMethodField()
+    court_number = serializers.SerializerMethodField()
+    checked_in_at = serializers.SerializerMethodField()
 
     class Meta:
         model = Player
@@ -21,6 +33,9 @@ class AdminPlayerSerializer(serializers.ModelSerializer):
             "is_active",
             "created_at",
             "current_assignment",
+            "status",
+            "court_number",
+            "checked_in_at",
         ]
 
     def get_username(self, player):
@@ -48,6 +63,29 @@ class AdminPlayerSerializer(serializers.ModelSerializer):
             "status": pair.entry.status,
         }
 
+    def _assignment(self, player):
+        if player.user_id is None:
+            return None
+        return self.context.get("assignments", {}).get(player.user_id)
+
+    def get_status(self, player):
+        if player.user_id is None:
+            return "not_checked_in"
+        assignment = self._assignment(player)
+        if assignment:
+            return "on_court" if assignment["status"] == QueueEntry.Status.ACTIVE else "in_queue"
+        checked_in = player.user_id in self.context.get("checkins", {})
+        return "waiting_room" if checked_in else "not_checked_in"
+
+    def get_court_number(self, player):
+        assignment = self._assignment(player)
+        return assignment["court_number"] if assignment else None
+
+    def get_checked_in_at(self, player):
+        if player.user_id is None:
+            return None
+        return self.context.get("checkins", {}).get(player.user_id)
+
 
 class AdminCourtSerializer(serializers.ModelSerializer):
     class Meta:
@@ -58,16 +96,36 @@ class AdminCourtSerializer(serializers.ModelSerializer):
 class AdminLocationSerializer(serializers.ModelSerializer):
     court_count = serializers.SerializerMethodField()
     active_court_count = serializers.SerializerMethodField()
+    waiting_room_count = serializers.SerializerMethodField()
+    in_queue_count = serializers.SerializerMethodField()
+    on_court_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Location
-        fields = ["id", "name", "is_active", "created_at", "court_count", "active_court_count"]
+        fields = [
+            "id", "name", "is_active", "created_at", "court_count", "active_court_count",
+            "waiting_room_count", "in_queue_count", "on_court_count",
+        ]
 
     def get_court_count(self, location):
         return location.courts.count()
 
     def get_active_court_count(self, location):
         return location.courts.filter(is_active=True).count()
+
+    def _counts(self, location):
+        return self.context.get("location_counts", {}).get(
+            location.id, {"waiting_room": 0, "in_queue": 0, "on_court": 0}
+        )
+
+    def get_waiting_room_count(self, location):
+        return self._counts(location)["waiting_room"]
+
+    def get_in_queue_count(self, location):
+        return self._counts(location)["in_queue"]
+
+    def get_on_court_count(self, location):
+        return self._counts(location)["on_court"]
 
 
 class LoginLogSerializer(serializers.ModelSerializer):

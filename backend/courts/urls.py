@@ -27,4 +27,5 @@ urlpatterns = [
         name="queue-entry-unsign",
     ),
     path("pairs/unsign/", views.QuickUnsignView.as_view(), name="quick-unsign"),
+    path("players/check-in/", views.CheckInView.as_view(), name="player-check-in"),
 ]

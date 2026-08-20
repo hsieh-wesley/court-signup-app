@@ -246,6 +246,82 @@ button {
   border-bottom: 1px solid #e2e8f0;
 }
 
+.admin-facility-select {
+  display: block;
+  margin: 0.5rem 0 1rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.admin-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+
+.admin-toolbar input,
+.admin-toolbar select {
+  padding: 0.4rem 0.5rem;
+}
+
+.admin-toolbar label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.8rem;
+  color: #475569;
+}
+
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.actions-menu {
+  position: relative;
+  display: inline-block;
+}
+
+.actions-menu summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+}
+
+.actions-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.actions-menu-list {
+  position: absolute;
+  right: 0;
+  top: 110%;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 0.4rem;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+  min-width: 9rem;
+}
+
+.dev-tools {
+  margin-top: 1.5rem;
+  color: #666;
+}
+
+.dev-tools summary {
+  cursor: pointer;
+}
+
 .board-column {
   background: #1e293b;
   color: white;

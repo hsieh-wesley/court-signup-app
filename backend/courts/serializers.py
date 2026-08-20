@@ -130,10 +130,24 @@ class PlayerStatusSerializer(serializers.Serializer):
 
 
 class QuickUnsignSerializer(serializers.Serializer):
-    """No pair_id — services.unsign_pair_by_credentials looks up the shared
-    pair from both players' verified identities directly."""
+    """No pair_id — services.unsign_by_credentials looks up each group's
+    shared pair from their verified identities directly. Same 1-2-groups-
+    of-2 shape as CreateQueueEntrySerializer.pairs, so the Overview widget
+    can reuse the same 2-vs-4 toggle used for signing up."""
 
-    username1 = serializers.CharField(max_length=150)
-    password1 = serializers.CharField(max_length=150)
-    username2 = serializers.CharField(max_length=150)
-    password2 = serializers.CharField(max_length=150)
+    pairs = serializers.ListField(
+        child=serializers.ListField(
+            child=PlayerCredentialSerializer(), min_length=2, max_length=2
+        ),
+        min_length=1,
+        max_length=2,
+    )
+
+
+class CheckInSerializer(serializers.Serializer):
+    """Explicit Check In for a returning player — verifies credentials and
+    stamps today's facility presence, with no session/token created."""
+
+    username = serializers.CharField(max_length=150)
+    password = serializers.CharField(max_length=150)
+    location_id = serializers.PrimaryKeyRelatedField(queryset=Location.objects.all())

@@ -1,4 +1,5 @@
-from django.db.models import Q
+from django.db.models import Max, Q
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -20,7 +21,7 @@ from .admin_serializers import (
     CourtActivityLogSerializer,
     LoginLogSerializer,
 )
-from .models import Court, CourtActivityLog, Location, LoginLog, Player
+from .models import Court, CourtActivityLog, Location, LoginLog, Pair, Player, QueueEntry
 from .permissions import IsAdmin
 
 
@@ -45,12 +46,85 @@ def _get_location_or_404(pk):
         return None
 
 
+def _assignment_map():
+    """{user_id: {"status": "active"|"waiting", "court_number": N}} for every
+    player currently on a court/queue anywhere — global, not location-
+    filtered, since a player can only be active/waiting at one facility at
+    a time (services._reject_if_active_elsewhere)."""
+    pairs = Pair.objects.filter(
+        entry__status__in=[QueueEntry.Status.WAITING, QueueEntry.Status.ACTIVE],
+    ).select_related("entry__court")
+    result = {}
+    for pair in pairs:
+        info = {"status": pair.entry.status, "court_number": pair.entry.court.number}
+        result[pair.player_1_id] = info
+        result[pair.player_2_id] = info
+    return result
+
+
+def _checkin_map(location_id):
+    """{user_id: latest registration/check-in datetime today} for one
+    location. Empty if no location_id was given."""
+    if not location_id:
+        return {}
+    rows = (
+        LoginLog.objects.filter(
+            location_id=location_id,
+            context__in=[LoginLog.Context.REGISTRATION, LoginLog.Context.CHECK_IN],
+            created_at__date=timezone.localdate(),
+        )
+        .values("user_id")
+        .annotate(latest=Max("created_at"))
+    )
+    return {row["user_id"]: row["latest"] for row in rows}
+
+
+def _location_counts():
+    """{location_id: {"waiting_room", "in_queue", "on_court"}} for every
+    location. on_court/in_queue come straight from today's Pair rows;
+    waiting_room is today's distinct checked-in users at that location,
+    minus whoever is currently assigned anywhere (same invariant as
+    _assignment_map — presence and assignment are mutually exclusive)."""
+    counts = {
+        loc_id: {"waiting_room": 0, "in_queue": 0, "on_court": 0}
+        for loc_id in Location.objects.values_list("id", flat=True)
+    }
+
+    pairs = Pair.objects.filter(
+        entry__status__in=[QueueEntry.Status.WAITING, QueueEntry.Status.ACTIVE],
+    ).select_related("entry__court")
+    assigned_user_ids = set()
+    for pair in pairs:
+        key = "on_court" if pair.entry.status == QueueEntry.Status.ACTIVE else "in_queue"
+        counts[pair.entry.court.location_id][key] += 2
+        assigned_user_ids.add(pair.player_1_id)
+        assigned_user_ids.add(pair.player_2_id)
+
+    checkins = (
+        LoginLog.objects.filter(
+            context__in=[LoginLog.Context.REGISTRATION, LoginLog.Context.CHECK_IN],
+            created_at__date=timezone.localdate(),
+            location_id__isnull=False,
+        )
+        .values("location_id", "user_id")
+        .distinct()
+    )
+    for row in checkins:
+        if row["user_id"] in assigned_user_ids:
+            continue
+        counts[row["location_id"]]["waiting_room"] += 1
+
+    return counts
+
+
 class AdminPlayerListCreateView(APIView):
     permission_classes = [IsAdmin]
 
     def get(self, request):
         players = Player.objects.select_related("user").order_by("display_name")
-        return Response(AdminPlayerSerializer(players, many=True).data)
+        location_id = request.query_params.get("location_id")
+        context = {"assignments": _assignment_map(), "checkins": _checkin_map(location_id)}
+        return Response(AdminPlayerSerializer(players, many=True, context=context).data)
 
     def post(self, request):
         serializer = AdminPlayerCreateSerializer(data=request.data)
@@ -218,7 +292,8 @@ class AdminLocationListCreateView(APIView):
 
     def get(self, request):
         locations = Location.objects.all().order_by("name")
-        return Response(AdminLocationSerializer(locations, many=True).data)
+        context = {"location_counts": _location_counts()}
+        return Response(AdminLocationSerializer(locations, many=True, context=context).data)
 
     def post(self, request):
         serializer = AdminLocationCreateSerializer(data=request.data)

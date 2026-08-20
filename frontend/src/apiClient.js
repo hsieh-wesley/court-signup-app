@@ -63,17 +63,26 @@ export const api = {
       method: "POST",
       body: { credentials },
     }),
-  // Looks up the shared pair from both players' credentials directly — no
-  // pair_id needed, used by Overview's compact Unsign widget.
-  quickUnsign: (username1, password1, username2, password2) =>
+  // 1 or 2 groups of 2 {username,password} credentials — same shape as
+  // joinQueue's `pairs`, so Overview's Unsign widget can reuse the same
+  // 2-vs-4 toggle. Looks up each group's shared pair directly, no pair_id
+  // needed.
+  quickUnsign: (pairs) =>
     request("/pairs/unsign/", {
       method: "POST",
-      body: { username1, password1, username2, password2 },
+      body: { pairs },
+    }),
+  // Explicit presence for a returning player — no session/token created.
+  checkIn: (username, password, locationId) =>
+    request("/players/check-in/", {
+      method: "POST",
+      body: { username, password, location_id: locationId },
     }),
 };
 
 export const adminApi = {
-  listPlayers: (token) => request("/admin/players/", { token }),
+  listPlayers: (token, locationId) =>
+    request(`/admin/players/${qs({ location_id: locationId })}`, { token }),
   createPlayer: (token, { displayName, username, enableLogin }) =>
     request("/admin/players/", {
       method: "POST",

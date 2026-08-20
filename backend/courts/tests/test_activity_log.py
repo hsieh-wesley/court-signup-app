@@ -213,9 +213,11 @@ def test_registration_logs_context_with_facility_no_session():
     assert PlayerSession.objects.count() == 0
 
 
-# Row 10: a successful court join does not create a redundant LoginLog row —
-# CourtActivityLog already fully represents it.
-def test_successful_join_creates_no_login_log_rows():
+# Row 10: a successful court join is fully represented by CourtActivityLog,
+# but it also stamps each player's same-day facility presence (DoD K) —
+# one CHECK_IN LoginLog row per player, so neither needs a separate Check In
+# tap to show up as Waiting Room after they leave the court.
+def test_successful_join_stamps_one_check_in_per_player():
     from rest_framework.test import APIClient
 
     court = make_court()
@@ -235,7 +237,57 @@ def test_successful_join_creates_no_login_log_rows():
         format="json",
     )
     assert resp.status_code == 201
-    assert LoginLog.objects.count() == 0
+    assert LoginLog.objects.count() == 2
+    assert set(LoginLog.objects.values_list("username", flat=True)) == {"alice", "bob"}
+    assert all(log.context == LoginLog.Context.CHECK_IN for log in LoginLog.objects.all())
+    assert all(log.location_id == court.location_id for log in LoginLog.objects.all())
     assert CourtActivityLog.objects.filter(
         event_type=CourtActivityLog.EventType.PAIR_ACTIVATED
     ).count() == 1
+
+
+# DoD L: a player who already checked in today doesn't get a duplicate row
+# just for signing up for a court afterward.
+def test_join_does_not_duplicate_an_existing_check_in_today():
+    from rest_framework.test import APIClient
+
+    court = make_court()
+    alice = make_user("alice")
+    make_user("bob")
+    services.check_in_player("alice", "pw12345", court.location)
+    assert LoginLog.objects.filter(username="alice").count() == 1
+
+    client = APIClient()
+    resp = client.post(
+        "/api/queue-entries/",
+        {
+            "court_id": court.id,
+            "pairs": [[
+                {"username": "alice", "password": "pw12345"},
+                {"username": "bob", "password": "pw12345"},
+            ]],
+        },
+        format="json",
+    )
+    assert resp.status_code == 201
+    assert LoginLog.objects.filter(username="alice").count() == 1
+    assert LoginLog.objects.filter(username="bob").count() == 1
+
+
+# DoD A: the explicit Check In endpoint stamps presence with no session/token
+def test_check_in_endpoint_stamps_presence_with_no_session():
+    from rest_framework.test import APIClient
+
+    court = make_court()
+    make_user("alice")
+
+    client = APIClient()
+    resp = client.post(
+        "/api/players/check-in/",
+        {"username": "alice", "password": "pw12345", "location_id": court.location_id},
+    )
+    assert resp.status_code == 200
+    assert "token" not in resp.data
+    log = LoginLog.objects.get(username="alice")
+    assert log.context == LoginLog.Context.CHECK_IN
+    assert log.location_id == court.location_id

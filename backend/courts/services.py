@@ -267,26 +267,50 @@ def unsign_pair(entry, pair_id, requesting_user):
     return entry
 
 
-def unsign_pair_by_credentials(username1, password1, username2, password2):
-    """Quick-unsign entry point: both players' credentials in, no pair_id
-    needed. Verifies both (matching the same "both players prove it"
-    pattern used for joining, intentionally stricter than unsign_pair's
-    own any-current-member rule), finds their shared active/waiting pair,
-    and unsigns it via the existing unsign_pair — same CourtActivityLog
-    row, no logging changes needed."""
-    user1 = verify_credential(username1, password1)
-    user2 = verify_credential(username2, password2)
-    pair = (
+def _find_shared_pair(user_a, user_b):
+    """The active/waiting Pair containing exactly these two players, if any."""
+    return (
         Pair.objects.filter(
-            Q(player_1=user1, player_2=user2) | Q(player_1=user2, player_2=user1),
+            Q(player_1=user_a, player_2=user_b) | Q(player_1=user_b, player_2=user_a),
             entry__status__in=[QueueEntry.Status.WAITING, QueueEntry.Status.ACTIVE],
         )
         .select_related("entry")
         .first()
     )
-    if pair is None:
-        raise ServiceError("You two aren't currently signed up together.")
-    return unsign_pair(pair.entry, pair.id, requesting_user=user1)
+
+
+def unsign_by_credentials(pairs_credentials):
+    """Quick-unsign entry point: 1 or 2 groups of 2 {"username","password"}
+    dicts — same shape verify_pair_credentials/create_queue_entry take, so
+    the Overview widget can reuse its 2-vs-4 toggle. Every credential is
+    verified and both pairs resolved *before* anything is touched; for a
+    4-player unsign, the two pairs must belong to the same QueueEntry —
+    being on the same physical court is not enough, since a court can host
+    two distinct QueueEntry groups (e.g. one active, one waiting)."""
+    verified_pairs = []
+    for group in pairs_credentials:
+        u_a = verify_credential(group[0]["username"], group[0]["password"])
+        u_b = verify_credential(group[1]["username"], group[1]["password"])
+        pair = _find_shared_pair(u_a, u_b)
+        if pair is None:
+            raise ServiceError(f"{u_a.username} and {u_b.username} aren't signed up together.")
+        verified_pairs.append(pair)
+
+    if len(verified_pairs) == 2 and verified_pairs[0].entry_id != verified_pairs[1].entry_id:
+        raise ServiceError("Those two pairs aren't signed up as the same group.")
+
+    entry = verified_pairs[0].entry
+    with transaction.atomic():
+        locked_court = Court.objects.select_for_update().get(pk=entry.court_id)
+        locked_entry = QueueEntry.objects.select_for_update().get(pk=entry.pk)
+        for pair in verified_pairs:
+            try:
+                locked_pair = locked_entry.pairs.get(pk=pair.pk)
+            except Pair.DoesNotExist:
+                raise ServiceError("That pair is no longer part of this entry.")
+            _end_pair(locked_court, locked_entry, locked_pair, reason=CourtActivityLog.Reason.UNSIGNED)
+    entry.refresh_from_db()
+    return entry
 
 
 def _check_not_expired(user):
@@ -328,14 +352,33 @@ def verify_credential(username, password):
     return user
 
 
+def has_facility_presence_today(user, location):
+    """Whether `user` already has a valid registration/check-in LoginLog for
+    `location` today — the same query the derived Waiting Room status
+    (AdminPlayerSerializer.get_status) is computed from, shared here so a
+    Sign Up/Join never writes a duplicate presence row."""
+    if location is None:
+        return False
+    return LoginLog.objects.filter(
+        user=user,
+        location=location,
+        context__in=[LoginLog.Context.REGISTRATION, LoginLog.Context.CHECK_IN],
+        created_at__date=timezone.localdate(),
+    ).exists()
+
+
 def verify_pair_credentials(pairs_credentials, target_location):
     """`pairs_credentials` is a list of 1-2 groups, each a list of 2
     {"username", "password"} dicts. Every member's credentials are verified
     — there is no "self" exemption, since the public kiosk has no notion of
     who's already signed in. Also enforces the single-facility invariant
-    for each verified player against `target_location`. Returns the
-    equivalent plain [[username, username], ...] structure for
-    services.create_queue_entry / join_open_slot, which are unchanged."""
+    for each verified player against `target_location`, and — since Sign Up
+    and Join This Pair are the only two flows that route through here —
+    stamps a same-day check-in for anyone who doesn't already have a valid
+    one, so a player never has to tap Check In separately just to show up
+    on a court. Returns the equivalent plain [[username, username], ...]
+    structure for services.create_queue_entry / join_open_slot, which are
+    unchanged."""
     result = []
     for group in pairs_credentials:
         usernames = []
@@ -344,9 +387,21 @@ def verify_pair_credentials(pairs_credentials, target_location):
             password = member.get("password", "")
             user = verify_credential(username, password)
             _reject_if_active_elsewhere(user, target_location)
+            if not has_facility_presence_today(user, target_location):
+                activity_log.log_player_auth_event(user, target_location, LoginLog.Context.CHECK_IN)
             usernames.append(username)
         result.append(usernames)
     return result
+
+
+def check_in_player(username, password, location):
+    """Explicit Check In for a returning player — verifies credentials and
+    stamps a same-day presence row, same as the implicit stamp inside
+    verify_pair_credentials, for someone who wants to enter the Waiting
+    Room before picking a court. No PlayerSession/token is created."""
+    user = verify_credential(username, password)
+    activity_log.log_player_auth_event(user, location, LoginLog.Context.CHECK_IN)
+    return user
 
 
 def create_player_session(user, location=None):
