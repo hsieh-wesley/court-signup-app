@@ -142,17 +142,14 @@ class AdminPlayerListCreateView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         try:
-            player, plaintext = admin_services.create_player(
+            player, _ = admin_services.create_player(
                 display_name=data["display_name"],
                 username=data.get("username") or None,
                 enable_login=data.get("enable_login", False),
             )
         except services.ServiceError as exc:
             return Response({"detail": str(exc)}, status=exc.status)
-        payload = AdminPlayerSerializer(player).data
-        if plaintext:
-            payload["password"] = plaintext
-        return Response(payload, status=status.HTTP_201_CREATED)
+        return Response(AdminPlayerSerializer(player).data, status=status.HTTP_201_CREATED)
 
 
 class AdminPlayerDetailView(APIView):

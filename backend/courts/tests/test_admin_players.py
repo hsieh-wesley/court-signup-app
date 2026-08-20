@@ -1,7 +1,7 @@
 import pytest
 
-from courts import activity_log, services
-from courts.models import LoginLog, QueueEntry
+from courts import activity_log, admin_services, services
+from courts.models import LoginLog, Player, QueueEntry
 from courts.tests.factories import authed_client, make_admin_user, make_court, make_user
 
 pytestmark = pytest.mark.django_db
@@ -129,3 +129,51 @@ def test_location_counts_match_player_statuses():
     assert row["on_court_count"] == 4  # alice, bob, carol, dave all promoted onto empty courts
     assert row["in_queue_count"] == 0
     assert row["waiting_room_count"] == 1  # erin only
+
+
+# Admin/staff can view a player's current password without resetting it.
+def test_create_player_password_is_immediately_viewable():
+    player, plaintext = admin_services.create_player("Alice", username="alice", enable_login=True)
+    player.refresh_from_db()
+    assert player.current_password_plaintext == plaintext
+
+
+def test_reset_password_updates_the_viewable_password():
+    player, first = admin_services.create_player("Alice", username="alice", enable_login=True)
+    second = admin_services.reset_password(player)
+    player.refresh_from_db()
+    assert second != first
+    assert player.current_password_plaintext == second
+
+
+def test_add_login_stores_viewable_password_for_new_and_existing_player():
+    player, _ = admin_services.create_player("Alice", enable_login=False)
+    first = admin_services.add_login(player, "alice")
+    player.refresh_from_db()
+    assert player.current_password_plaintext == first
+
+    second = admin_services.add_login(player, "alice")
+    player.refresh_from_db()
+    assert second != first
+    assert player.current_password_plaintext == second
+
+
+def test_admin_players_endpoint_exposes_password_to_staff_and_admin():
+    admin_services.create_player("Alice", username="alice", enable_login=True)
+    player = Player.objects.get(display_name="Alice")
+
+    for is_superuser in (False, True):
+        client = authed_client(make_admin_user(f"acct{is_superuser}", is_superuser=is_superuser))
+        resp = client.get("/api/admin/players/")
+        assert resp.status_code == 200
+        row = next(r for r in resp.data if r["username"] == "alice")
+        assert row["password"] == player.current_password_plaintext
+
+
+def test_admin_players_endpoint_reports_null_password_for_guest_with_no_login():
+    admin_services.create_player("Guest Only", enable_login=False)
+    admin = make_admin_user()
+    client = authed_client(admin)
+    resp = client.get("/api/admin/players/")
+    row = next(r for r in resp.data if r["display_name"] == "Guest Only")
+    assert row["password"] is None

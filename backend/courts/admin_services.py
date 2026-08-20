@@ -46,7 +46,9 @@ def create_player(display_name, username=None, enable_login=False):
         if enable_login:
             plaintext = generate_password()
             user = User.objects.create_user(username=username, password=plaintext)
-        player = Player.objects.create(display_name=display_name, user=user)
+        player = Player.objects.create(
+            display_name=display_name, user=user, current_password_plaintext=plaintext or ""
+        )
 
     return player, plaintext
 
@@ -78,12 +80,15 @@ def add_login(player, username):
         user.set_password(plaintext)
         user.save()
         PlayerSession.objects.filter(user=user).delete()
+        player.current_password_plaintext = plaintext
+        player.save(update_fields=["current_password_plaintext"])
         return plaintext
 
     validate_new_username(username)
     plaintext = generate_password()
     user = User.objects.create_user(username=username, password=plaintext)
     player.user = user
+    player.current_password_plaintext = plaintext
     player.save()
     return plaintext
 
@@ -103,6 +108,8 @@ def reset_password(player):
     player.user.set_password(plaintext)
     player.user.save()
     PlayerSession.objects.filter(user=player.user).delete()
+    player.current_password_plaintext = plaintext
+    player.save(update_fields=["current_password_plaintext"])
     return plaintext
 
 
@@ -160,7 +167,9 @@ def start_membership(username, phone_number, starts_at=None, expires_at=None):
         validate_new_username(username)
         plaintext = generate_password()
         user = User.objects.create_user(username=username, password=plaintext)
-        player = Player.objects.create(display_name=username, user=user)
+        player = Player.objects.create(
+            display_name=username, user=user, current_password_plaintext=plaintext
+        )
 
     if phone_conflict is not None and phone_conflict.player_id != player.id:
         raise ServiceError("That phone number is already active for another member.")
@@ -234,14 +243,19 @@ def create_test_players(n=8):
             PlayerSession.objects.filter(user=user).delete()
             player = getattr(user, "player", None)
             if player is None:
-                player = Player.objects.create(user=user, display_name=display_name)
+                player = Player.objects.create(
+                    user=user, display_name=display_name, current_password_plaintext=plaintext
+                )
             else:
                 player.is_active = True
                 player.display_name = display_name
+                player.current_password_plaintext = plaintext
                 player.save()
         except User.DoesNotExist:
             user = User.objects.create_user(username=username, password=plaintext)
-            Player.objects.create(user=user, display_name=display_name)
+            Player.objects.create(
+                user=user, display_name=display_name, current_password_plaintext=plaintext
+            )
         results.append(
             {"username": username, "password": plaintext, "display_name": display_name}
         )

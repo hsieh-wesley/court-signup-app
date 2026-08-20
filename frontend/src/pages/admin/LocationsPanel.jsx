@@ -149,6 +149,7 @@ export default function LocationsPanel() {
   const [error, setError] = useState(null);
   const [addOpen, setAddOpen] = useState(false);
   const [managingId, setManagingId] = useState(null);
+  const [showArchived, setShowArchived] = useState(false);
 
   async function refresh() {
     const data = await adminApi.listLocations(token);
@@ -160,7 +161,13 @@ export default function LocationsPanel() {
     refresh();
   }, []);
 
-  const sorted = useMemo(() => [...locations].sort((a, b) => a.name.localeCompare(b.name)), [locations]);
+  const sorted = useMemo(
+    () =>
+      [...locations]
+        .filter((l) => showArchived || l.is_active)
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [locations, showArchived]
+  );
 
   async function handleCreate(data) {
     await adminApi.createLocation(token, data);
@@ -205,14 +212,25 @@ export default function LocationsPanel() {
     <div>
       {error && <p className="error">{error}</p>}
 
-      {isSuperuser && (
-        <div className="admin-toolbar">
-          <button className="btn btn-primary" onClick={() => setAddOpen(true)}>
-            <Plus size={15} />
-            Add Location
-          </button>
-        </div>
-      )}
+      <div className="admin-toolbar">
+        <label style={{ flexDirection: "row", alignItems: "center", gap: "var(--space-2)" }}>
+          <input
+            type="checkbox"
+            checked={showArchived}
+            onChange={(e) => setShowArchived(e.target.checked)}
+          />
+          Show archived
+        </label>
+        {isSuperuser && (
+          <>
+            <span className="spacer" />
+            <button className="btn btn-primary" onClick={() => setAddOpen(true)}>
+              <Plus size={15} />
+              Add Location
+            </button>
+          </>
+        )}
+      </div>
 
       {loading ? (
         <p className="loading-state">Loading facilities…</p>

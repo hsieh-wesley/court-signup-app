@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus } from "lucide-react";
+import { Eye, EyeOff, Plus } from "lucide-react";
 import { useAuth } from "../../AuthContext";
 import { adminApi } from "../../apiClient";
 import Modal from "../../components/Modal";
@@ -30,6 +30,29 @@ function phoneInputProps(digits, setDigits) {
 function PhonePreview({ digits }) {
   if (!digits) return null;
   return <p className="muted" style={{ marginTop: "calc(-1 * var(--space-2))" }}>{formatPhone(digits)}</p>;
+}
+
+// Hidden by default, same reasoning as UsersPanel's PasswordCell — a
+// front-desk screen is often visible to whoever's standing at the
+// counter. A member's password is invalidated on every check-in, so
+// this is the only way to view their *current* one without checking
+// them in again.
+function PasswordReveal({ password }) {
+  const [revealed, setRevealed] = useState(false);
+  if (!password) return <span className="muted">—</span>;
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--space-2)" }}>
+      <code>{revealed ? password : "••••••••"}</code>
+      <button
+        type="button"
+        className="btn btn-ghost btn-icon btn-sm"
+        aria-label={revealed ? "Hide password" : "Show password"}
+        onClick={() => setRevealed((r) => !r)}
+      >
+        {revealed ? <EyeOff size={14} /> : <Eye size={14} />}
+      </button>
+    </span>
+  );
 }
 
 function dateInputValue(iso) {
@@ -124,6 +147,9 @@ function ManageMembershipModal({ member, onClose, onEdit, onRenew, history }) {
         ) : (
           <Badge status="neutral">Expired</Badge>
         )}
+      </p>
+      <p>
+        Password: <PasswordReveal password={member.password} />
       </p>
 
       {member.status === "active" ? (
@@ -266,6 +292,7 @@ export default function MembershipPanel() {
                 <th>Name</th>
                 <th>Phone</th>
                 <th>Status</th>
+                <th>Password</th>
                 <th>Member Since</th>
                 <th>Expires</th>
                 <th>Actions</th>
@@ -282,6 +309,9 @@ export default function MembershipPanel() {
                     ) : (
                       <Badge status="neutral">Expired</Badge>
                     )}
+                  </td>
+                  <td>
+                    <PasswordReveal password={member.password} />
                   </td>
                   <td>{new Date(member.member_since).toLocaleDateString()}</td>
                   <td>{member.expires_at ? new Date(member.expires_at).toLocaleDateString() : "No expiration"}</td>
