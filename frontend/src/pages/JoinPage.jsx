@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { CheckCircle2, XCircle } from "lucide-react";
 import { useFacility } from "../LocationContext";
 import { api } from "../apiClient";
 
@@ -127,18 +128,27 @@ export default function JoinPage() {
   if (createdPassword) {
     return (
       <div className="page page-narrow">
-        <h1>You're in!</h1>
-        <p>Remember your username and password — you'll need them to join a court.</p>
-        <div className="card">
-          <p>
+        <div className="avatar-placeholder">
+          <CheckCircle2 size={28} />
+        </div>
+        <h1 style={{ textAlign: "center" }}>You're in!</h1>
+        <p className="muted" style={{ textAlign: "center" }}>
+          Remember your username and password — you'll need them to join a court.
+        </p>
+        <div className="credential-reveal">
+          <p style={{ marginBottom: "var(--space-2)" }}>
             Username: <strong>{createdUsername}</strong>
           </p>
-          <p>
+          <p style={{ marginBottom: 0 }}>
             Password: <strong>{createdPassword}</strong>
           </p>
         </div>
-        <p className="muted">Returning to Join in 10 seconds…</p>
-        <button onClick={() => navigate("/overview")}>Go to Overview</button>
+        <p className="muted" style={{ textAlign: "center", marginTop: "var(--space-4)" }}>
+          Returning to Join in 10 seconds…
+        </p>
+        <button className="btn btn-secondary btn-lg" onClick={() => navigate("/overview")}>
+          Go to Overview
+        </button>
       </div>
     );
   }
@@ -146,20 +156,28 @@ export default function JoinPage() {
   if (checkedInMember) {
     return (
       <div className="page page-narrow">
-        <div className="avatar-placeholder">👤</div>
-        <h1>Welcome to the club, {checkedInMember.display_name}!</h1>
-        <div className="card">
-          <p>
+        <div className="avatar-placeholder">
+          <CheckCircle2 size={28} />
+        </div>
+        <h1 style={{ textAlign: "center" }}>Welcome, {checkedInMember.display_name}!</h1>
+        <div className="credential-reveal">
+          <p style={{ marginBottom: "var(--space-2)" }}>
             Username: <strong>{checkedInMember.username}</strong>
           </p>
-          <p>
+          <p style={{ marginBottom: 0 }}>
             Password: <strong>{checkedInMember.password}</strong>
           </p>
         </div>
-        <p className="muted">Returning to Join in 10 seconds…</p>
-        <div className="mode-toggle">
-          <button onClick={() => setCheckedInMember(null)}>Check in someone else</button>
-          <button onClick={() => navigate("/overview")}>Go to Overview</button>
+        <p className="muted" style={{ textAlign: "center", marginTop: "var(--space-4)" }}>
+          Returning to Join in 10 seconds…
+        </p>
+        <div className="button-row">
+          <button className="btn btn-secondary" onClick={() => setCheckedInMember(null)}>
+            Check in someone else
+          </button>
+          <button className="btn btn-secondary" onClick={() => navigate("/overview")}>
+            Go to Overview
+          </button>
         </div>
       </div>
     );
@@ -167,26 +185,46 @@ export default function JoinPage() {
 
   return (
     <div className="page page-narrow">
-      <h1>Join{selectedLocation ? ` ${selectedLocation.name}` : ""}</h1>
-      <p className="muted">
-        Members: type your 10-digit phone number to check in. Everyone else: type your desired
-        username to get started.
+      <h1 style={{ textAlign: "center" }}>Check In</h1>
+      {selectedLocation && (
+        <p className="muted" style={{ textAlign: "center", marginTop: "calc(-1 * var(--space-2))" }}>
+          {selectedLocation.name}
+        </p>
+      )}
+      <p className="muted" style={{ textAlign: "center" }}>
+        Members can check in with their phone number.
+        <br />
+        Guests can create a username to get started.
       </p>
       <form onSubmit={handleSubmit} className="form">
         <label>
           Phone number or desired username
-          <input value={input} onChange={(e) => setInput(e.target.value)} required />
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="(555) 010-0001 or a username"
+            required
+          />
         </label>
         {kind === "username" && checking && <p className="muted">Checking availability…</p>}
         {kind === "username" && !checking && available === false && (
-          <p className="error">That username is taken.</p>
+          <p className="error">
+            <XCircle size={14} /> That username is taken.
+          </p>
         )}
         {kind === "username" && !checking && available === true && (
-          <p className="success">Available!</p>
+          <p className="success">
+            <CheckCircle2 size={14} /> Available!
+          </p>
         )}
-        {error && <p className="error">{error}</p>}
+        {error && (
+          <p className="error">
+            <XCircle size={14} /> {error}
+          </p>
+        )}
         <button
           type="submit"
+          className="btn btn-primary btn-lg"
           disabled={
             submitting ||
             (kind !== "adminRedirect" && !selectedLocationId) ||

@@ -1,14 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
+import { Plus, X } from "lucide-react";
 import { useAuth } from "../../AuthContext";
 import { adminApi, api } from "../../apiClient";
 import Modal from "../../components/Modal";
+import Badge from "../../components/Badge";
 import { formatSeconds, useLiveCountdown } from "../../timeFormat";
-
-function courtStatus(court) {
-  if (court.active_entry) return "active";
-  if (court.waiting_entries.length > 0) return "queued";
-  return "empty";
-}
+import { courtStatus, COURT_STATUS_BADGE, COURT_STATUS_LABEL } from "../../courtStatus";
 
 function AddCourtForm({ onCreate }) {
   const [number, setNumber] = useState("");
@@ -48,10 +45,19 @@ function AddCourtForm({ onCreate }) {
         <input type="number" min="1" value={capacity} onChange={(e) => setCapacity(e.target.value)} />
       </label>
       {error && <p className="error">{error}</p>}
-      <button type="submit" disabled={submitting}>
+      <button type="submit" className="btn btn-primary" disabled={submitting}>
         {submitting ? "Adding…" : "Add court"}
       </button>
     </form>
+  );
+}
+
+function RemoveButton({ username, onRemove }) {
+  return (
+    <button className="btn btn-ghost btn-sm" onClick={onRemove}>
+      <X size={13} />
+      {username}
+    </button>
   );
 }
 
@@ -71,11 +77,13 @@ function CourtManageModal({ court, onClose, onAction }) {
           {allPairs.map((pair) => (
             <li key={pair.id}>
               <span>{pair.players.join(" & ")}</span>
-              <span>
+              <span style={{ display: "flex", gap: "var(--space-1)" }}>
                 {pair.players.map((username) => (
-                  <button key={username} onClick={() => onAction("removePlayer", court, username)}>
-                    Remove {username}
-                  </button>
+                  <RemoveButton
+                    key={username}
+                    username={username}
+                    onRemove={() => onAction("removePlayer", court, username)}
+                  />
                 ))}
               </span>
             </li>
@@ -87,29 +95,35 @@ function CourtManageModal({ court, onClose, onAction }) {
       {court.waiting_entries.length === 0 ? (
         <p className="muted">No one waiting.</p>
       ) : (
-        <ol>
+        <ol style={{ paddingLeft: "var(--space-5)", display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
           {court.waiting_entries.map((entry) => (
             <li key={entry.id}>
-              {entry.pairs.map((p) => p.players.join(" & ")).join(" + ")}
-              {entry.open_slot && <span className="badge">Open slot</span>}
-              {entry.pairs.map((pair) => (
-                <span key={pair.id}>
-                  {pair.players.map((username) => (
-                    <button key={username} onClick={() => onAction("removePlayer", court, username)}>
-                      Remove {username}
-                    </button>
-                  ))}
-                </span>
-              ))}
+              <span style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexWrap: "wrap" }}>
+                {entry.pairs.map((p) => p.players.join(" & ")).join(" + ")}
+                {entry.open_slot && <Badge status="warning">Open slot</Badge>}
+                {entry.pairs.map((pair) =>
+                  pair.players.map((username) => (
+                    <RemoveButton
+                      key={username}
+                      username={username}
+                      onRemove={() => onAction("removePlayer", court, username)}
+                    />
+                  ))
+                )}
+              </span>
             </li>
           ))}
         </ol>
       )}
 
-      <div className="mode-toggle">
-        <button onClick={() => onAction("drop", court)}>Drop Court</button>
+      <div className="button-row">
+        <button className="btn btn-danger" onClick={() => onAction("drop", court)}>
+          Drop Court
+        </button>
         {court.is_active ? (
-          <button onClick={() => onAction("deactivate", court)}>Deactivate Court</button>
+          <button className="btn btn-danger" onClick={() => onAction("deactivate", court)}>
+            Deactivate Court
+          </button>
         ) : (
           <span className="muted">Not accepting signups</span>
         )}
@@ -129,23 +143,25 @@ const SORTERS = {
 function CourtRow({ court, onManage }) {
   const active = court.active_entry;
   const remaining = useLiveCountdown(active?.seconds_remaining ?? null, active?.id);
+  const status = courtStatus(court);
 
   return (
     <tr>
+      <td>{court.name}</td>
       <td>
-        {court.name}
-        {!court.is_active && <span className="badge">Deactivated</span>}
+        <Badge status={COURT_STATUS_BADGE[status]}>{COURT_STATUS_LABEL[status]}</Badge>
       </td>
-      <td>{active ? "On Court" : court.waiting_entries.length ? "Has Queue" : "Empty"}</td>
       <td>{active ? active.pairs.map((p) => p.players.join("/")).join(" + ") : "—"}</td>
-      <td>{remaining != null ? formatSeconds(remaining) : "—"}</td>
+      <td style={{ fontFamily: "var(--font-mono)" }}>{remaining != null ? formatSeconds(remaining) : "—"}</td>
       <td>
         {court.waiting_entries.length
           ? `${court.waiting_entries.length} group${court.waiting_entries.length > 1 ? "s" : ""}`
           : "—"}
       </td>
       <td>
-        <button onClick={onManage}>Manage</button>
+        <button className="btn btn-secondary btn-sm" onClick={onManage}>
+          Manage
+        </button>
       </td>
     </tr>
   );
@@ -154,6 +170,7 @@ function CourtRow({ court, onManage }) {
 export default function CourtsPanel({ locationId }) {
   const { token } = useAuth();
   const [courts, setCourts] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [addOpen, setAddOpen] = useState(false);
   const [managingCourtId, setManagingCourtId] = useState(null);
@@ -164,21 +181,17 @@ export default function CourtsPanel({ locationId }) {
     if (!locationId) return;
     const data = await api.getCourts(locationId);
     setCourts(data);
+    setLoading(false);
   }
 
   useEffect(() => {
+    setLoading(true);
     refresh();
   }, [locationId]);
 
   const visible = useMemo(() => {
     return courts
-      .filter((c) => {
-        if (statusFilter === "all") return true;
-        if (statusFilter === "empty") return courtStatus(c) === "empty";
-        if (statusFilter === "active") return courtStatus(c) === "active";
-        if (statusFilter === "queued") return c.waiting_entries.length > 0;
-        return true;
-      })
+      .filter((c) => statusFilter === "all" || courtStatus(c) === statusFilter)
       .sort(SORTERS[sortBy]);
   }, [courts, statusFilter, sortBy]);
 
@@ -216,38 +229,57 @@ export default function CourtsPanel({ locationId }) {
       {error && <p className="error">{error}</p>}
 
       <div className="admin-toolbar">
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-          <option value="all">All</option>
-          <option value="empty">Empty</option>
-          <option value="active">Active</option>
-          <option value="queued">Has Queue</option>
-        </select>
-        <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
-          <option value="number">Sort: Court Number</option>
-          <option value="status">Sort: Status</option>
-          <option value="queue">Sort: Queue Size</option>
-          <option value="remaining">Sort: Time Remaining</option>
-        </select>
-        <button onClick={() => setAddOpen(true)}>+ Add Court</button>
+        <label>
+          Status
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+            <option value="all">All</option>
+            <option value="available">Available</option>
+            <option value="in_play">In Play</option>
+            <option value="queue">Queue</option>
+            <option value="inactive">Inactive</option>
+          </select>
+        </label>
+        <label>
+          Sort
+          <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+            <option value="number">Court Number</option>
+            <option value="status">Status</option>
+            <option value="queue">Queue Size</option>
+            <option value="remaining">Time Remaining</option>
+          </select>
+        </label>
+        <span className="spacer" />
+        <button className="btn btn-primary" onClick={() => setAddOpen(true)}>
+          <Plus size={15} />
+          Add Court
+        </button>
       </div>
 
-      <table className="history-table">
-        <thead>
-          <tr>
-            <th>Court</th>
-            <th>Status</th>
-            <th>Current Players</th>
-            <th>Time Remaining</th>
-            <th>Queue</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {visible.map((court) => (
-            <CourtRow key={court.id} court={court} onManage={() => setManagingCourtId(court.id)} />
-          ))}
-        </tbody>
-      </table>
+      {loading ? (
+        <p className="loading-state">Loading courts…</p>
+      ) : visible.length === 0 ? (
+        <p className="empty-state">No courts match these filters.</p>
+      ) : (
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Court</th>
+                <th>Status</th>
+                <th>Current Players</th>
+                <th>Time Remaining</th>
+                <th>Queue</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map((court) => (
+                <CourtRow key={court.id} court={court} onManage={() => setManagingCourtId(court.id)} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {addOpen && (
         <Modal title="Add Court" onClose={() => setAddOpen(false)}>

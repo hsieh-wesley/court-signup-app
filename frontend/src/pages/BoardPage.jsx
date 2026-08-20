@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { useFacility } from "../LocationContext";
 import { api } from "../apiClient";
 import { formatSeconds, useLiveCountdown } from "../timeFormat";
+import { courtStatus, COURT_STATUS_LABEL } from "../courtStatus";
 
 function slotLabel(entry, slotIndex) {
   const pair = entry.pairs.find((p) => p.slot === slotIndex);
@@ -14,10 +15,14 @@ function slotLabel(entry, slotIndex) {
 function CourtColumn({ court }) {
   const active = court.active_entry;
   const remaining = useLiveCountdown(active?.seconds_remaining ?? null, active?.id);
+  const status = courtStatus(court);
 
   return (
     <div className="board-column">
-      <h2>{court.name}</h2>
+      <div className="court-card-header">
+        <h2>{court.name}</h2>
+        <span className="badge badge-neutral">{COURT_STATUS_LABEL[status]}</span>
+      </div>
       {active ? (
         <div className="board-active">
           <div className="board-timer">{formatSeconds(remaining)}</div>
@@ -35,7 +40,7 @@ function CourtColumn({ court }) {
         {court.waiting_entries.map((entry) => (
           <li key={entry.id}>
             {entry.pairs.map((p) => p.players.join(" & ")).join(", ")}
-            {entry.open_slot && <span className="badge">Open slot</span>}
+            {entry.open_slot && <span className="badge badge-neutral">Open slot</span>}
           </li>
         ))}
       </ol>
@@ -69,6 +74,9 @@ export default function BoardPage() {
 
   return (
     <div className="board">
+      <p style={{ margin: 0, paddingTop: "0.5rem", fontSize: "0.85rem", textAlign: "center", color: "#94a3b8" }}>
+        CourtFlow
+      </p>
       {locationName && <h1 className="board-title">{locationName}</h1>}
       <div className="board-columns">
         {courts.map((court) => (

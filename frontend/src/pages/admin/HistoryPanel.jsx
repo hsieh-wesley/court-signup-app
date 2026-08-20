@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../../AuthContext";
 import { useFacility } from "../../LocationContext";
 import { adminApi } from "../../apiClient";
+import Badge from "../../components/Badge";
 
 const EVENT_TYPES = [
   "pair_queued",
@@ -22,6 +23,7 @@ export default function HistoryPanel({ locationId }) {
   const { locations } = useFacility();
   const [logins, setLogins] = useState([]);
   const [activity, setActivity] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [date, setDate] = useState(today());
   const [locationFilter, setLocationFilter] = useState(locationId || "");
   const [usernameFilter, setUsernameFilter] = useState("");
@@ -47,9 +49,11 @@ export default function HistoryPanel({ locationId }) {
     ]);
     setLogins(loginData);
     setActivity(activityData);
+    setLoading(false);
   }
 
   useEffect(() => {
+    setLoading(true);
     refresh();
   }, [date, locationFilter, usernameFilter, eventTypeFilter, membershipFilter]);
 
@@ -96,64 +100,90 @@ export default function HistoryPanel({ locationId }) {
         </label>
       </div>
 
-      <h3>Logins</h3>
-      <table className="history-table">
-        <thead>
-          <tr>
-            <th>When</th>
-            <th>Username</th>
-            <th>Location</th>
-            <th>Event</th>
-            <th>Membership</th>
-          </tr>
-        </thead>
-        <tbody>
-          {logins.map((row) => (
-            <tr key={row.id}>
-              <td>{new Date(row.created_at).toLocaleString()}</td>
-              <td>{row.username}</td>
-              <td>{row.location_name}</td>
-              <td>{row.context}</td>
-              <td>{row.membership_status === "member" ? "Member" : "Non-Member"}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {loading ? (
+        <p className="loading-state">Loading history…</p>
+      ) : (
+        <>
+          <h4>Logins</h4>
+          {logins.length === 0 ? (
+            <p className="empty-state">No login events for these filters.</p>
+          ) : (
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>When</th>
+                    <th>Username</th>
+                    <th>Location</th>
+                    <th>Event</th>
+                    <th>Membership</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {logins.map((row) => (
+                    <tr key={row.id}>
+                      <td>{new Date(row.created_at).toLocaleString()}</td>
+                      <td>{row.username}</td>
+                      <td>{row.location_name}</td>
+                      <td>{row.context}</td>
+                      <td>
+                        {row.membership_status === "member" ? (
+                          <Badge status="accent">Member</Badge>
+                        ) : (
+                          <Badge status="neutral">Non-Member</Badge>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
 
-      <h3>Court Activity</h3>
-      <table className="history-table">
-        <thead>
-          <tr>
-            <th>When</th>
-            <th>Event</th>
-            <th>Location</th>
-            <th>Court</th>
-            <th>Players</th>
-            <th>Actor</th>
-          </tr>
-        </thead>
-        <tbody>
-          {activity.map((row) => (
-            <tr key={row.id}>
-              <td>{new Date(row.created_at).toLocaleString()}</td>
-              <td>
-                {row.event_type}
-                {row.reason ? ` (${row.reason})` : ""}
-              </td>
-              <td>{row.location_name}</td>
-              <td>{row.court_number}</td>
-              <td>
-                {[row.player_1_username, row.player_2_username].filter(Boolean).join(" & ")}
-                {(row.player_1_membership_status === "member" ||
-                  row.player_2_membership_status === "member") && (
-                  <span className="badge">Member</span>
-                )}
-              </td>
-              <td>{row.actor_username || "—"}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+          <h4>Court Activity</h4>
+          {activity.length === 0 ? (
+            <p className="empty-state">No court activity for these filters.</p>
+          ) : (
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>When</th>
+                    <th>Event</th>
+                    <th>Location</th>
+                    <th>Court</th>
+                    <th>Players</th>
+                    <th>Actor</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {activity.map((row) => (
+                    <tr key={row.id}>
+                      <td>{new Date(row.created_at).toLocaleString()}</td>
+                      <td>
+                        {row.event_type}
+                        {row.reason ? ` (${row.reason})` : ""}
+                      </td>
+                      <td>{row.location_name}</td>
+                      <td>{row.court_number}</td>
+                      <td>
+                        <span style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+                          {[row.player_1_username, row.player_2_username].filter(Boolean).join(" & ")}
+                          {(row.player_1_membership_status === "member" ||
+                            row.player_2_membership_status === "member") && (
+                            <Badge status="accent">Member</Badge>
+                          )}
+                        </span>
+                      </td>
+                      <td>{row.actor_username || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }

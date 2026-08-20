@@ -1,4 +1,5 @@
 import { Navigate, NavLink, Route, Routes } from "react-router-dom";
+import { LogOut, ShieldCheck } from "lucide-react";
 import { AuthProvider, useAuth } from "./AuthContext";
 import { LocationProvider, useFacility } from "./LocationContext";
 import LoginPage from "./pages/LoginPage";
@@ -21,6 +22,7 @@ function LocationSwitcher() {
       className="location-switcher"
       value={selectedLocationId || ""}
       onChange={(e) => setSelectedLocationId(e.target.value)}
+      aria-label="Facility"
     >
       {locations.map((loc) => (
         <option key={loc.id} value={loc.id}>
@@ -31,33 +33,42 @@ function LocationSwitcher() {
   );
 }
 
-function FacilityHeader() {
-  const { selectedLocation } = useFacility();
-  return <h1 className="facility-header">{selectedLocation ? selectedLocation.name : " "}</h1>;
-}
-
 function Nav() {
   // `token`/`username` here only ever represent an Admin session — regular
   // players never hold one under the public kiosk model. No admin/staff
   // nav element is shown at all while logged out — the only way in is
   // typing "admin"/"staff" on the Join page — so a front-desk or courtside
-  // kiosk left logged out shows nothing but Join/Overview.
+  // kiosk left logged out shows nothing but the CourtFlow brand, Join,
+  // Overview, and the facility selector. The facility name lives only
+  // here, never as a page-dominating title — CourtFlow is the product's
+  // identity, the facility is just the current context.
   const { token, username, isAdmin, logout } = useAuth();
   return (
     <nav className="nav">
-      <span className="brand">Court Signup</span>
-      <NavLink to="/join">Join</NavLink>
-      <NavLink to="/overview">Overview</NavLink>
+      <NavLink to="/overview" className="nav-brand">
+        <span className="wordmark">CourtFlow</span>
+        <span className="tagline">Court &amp; Queue Management</span>
+      </NavLink>
+      <div className="nav-links">
+        <NavLink to="/join">Join</NavLink>
+        <NavLink to="/overview">Overview</NavLink>
+      </div>
       <LocationSwitcher />
       <span className="spacer" />
       {token && isAdmin && (
-        <>
-          <span className="muted">Admin: {username}</span>
-          <button onClick={logout}>Log out</button>
-          <NavLink to="/admin" className="admin-corner-link">
+        <div className="nav-account">
+          <span className="nav-account-badge">
+            <ShieldCheck size={14} />
+            {username}
+          </span>
+          <NavLink to="/admin" className="btn btn-secondary btn-sm">
             Admin
           </NavLink>
-        </>
+          <button className="btn btn-ghost btn-sm" onClick={logout}>
+            <LogOut size={14} />
+            Log out
+          </button>
+        </div>
       )}
     </nav>
   );
@@ -73,7 +84,6 @@ export default function App() {
             path="*"
             element={
               <>
-                <FacilityHeader />
                 <Nav />
                 <Routes>
                   <Route path="/login" element={<LoginPage />} />

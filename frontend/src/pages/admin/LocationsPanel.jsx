@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
+import { Plus } from "lucide-react";
 import { useAuth } from "../../AuthContext";
 import { adminApi } from "../../apiClient";
 import Modal from "../../components/Modal";
+import Badge from "../../components/Badge";
 
 function AddLocationForm({ onCreate }) {
   const [name, setName] = useState("");
@@ -41,7 +43,7 @@ function AddLocationForm({ onCreate }) {
         />
       </label>
       {error && <p className="error">{error}</p>}
-      <button type="submit" disabled={submitting}>
+      <button type="submit" className="btn btn-primary" disabled={submitting}>
         {submitting ? "Creating…" : "Create location"}
       </button>
     </form>
@@ -80,9 +82,11 @@ function LocationManageModal({ location, onClose, onAction }) {
           Facility name
           <input value={name} onChange={(e) => setName(e.target.value)} required />
         </label>
-        <button type="submit">Rename</button>
+        <button type="submit" className="btn btn-secondary btn-sm">
+          Rename
+        </button>
       </form>
-      <form onSubmit={handleSetCount} className="form">
+      <form onSubmit={handleSetCount} className="form" style={{ marginTop: "var(--space-4)" }}>
         <label>
           Court count
           <input
@@ -93,14 +97,20 @@ function LocationManageModal({ location, onClose, onAction }) {
             onChange={(e) => setCountInput(e.target.value)}
           />
         </label>
-        <button type="submit">Set court count</button>
+        <button type="submit" className="btn btn-secondary btn-sm">
+          Set court count
+        </button>
       </form>
       {error && <p className="error">{error}</p>}
-      <div className="mode-toggle">
+      <div className="button-row">
         {location.is_active ? (
-          <button onClick={() => onAction("deactivate", location)}>Deactivate</button>
+          <button className="btn btn-danger" onClick={() => onAction("deactivate", location)}>
+            Deactivate
+          </button>
         ) : (
-          <button onClick={() => onAction("activate", location)}>Reactivate</button>
+          <button className="btn btn-primary" onClick={() => onAction("activate", location)}>
+            Reactivate
+          </button>
         )}
       </div>
     </Modal>
@@ -110,6 +120,7 @@ function LocationManageModal({ location, onClose, onAction }) {
 export default function LocationsPanel() {
   const { token, isSuperuser } = useAuth();
   const [locations, setLocations] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [addOpen, setAddOpen] = useState(false);
   const [managingId, setManagingId] = useState(null);
@@ -117,6 +128,7 @@ export default function LocationsPanel() {
   async function refresh() {
     const data = await adminApi.listLocations(token);
     setLocations(data);
+    setLoading(false);
   }
 
   useEffect(() => {
@@ -163,42 +175,59 @@ export default function LocationsPanel() {
 
       {isSuperuser && (
         <div className="admin-toolbar">
-          <button onClick={() => setAddOpen(true)}>+ Add Location</button>
+          <button className="btn btn-primary" onClick={() => setAddOpen(true)}>
+            <Plus size={15} />
+            Add Location
+          </button>
         </div>
       )}
 
-      <table className="history-table">
-        <thead>
-          <tr>
-            <th>Facility</th>
-            <th>Courts</th>
-            <th>Waiting Room</th>
-            <th>In Queue</th>
-            <th>On Court</th>
-            <th>Status</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {sorted.map((location) => (
-            <tr key={location.id}>
-              <td>{location.name}</td>
-              <td>
-                {location.active_court_count}/{location.court_count}
-              </td>
-              <td>{location.waiting_room_count}</td>
-              <td>{location.in_queue_count}</td>
-              <td>{location.on_court_count}</td>
-              <td>
-                {location.is_active ? "Active" : <span className="badge">Deactivated</span>}
-              </td>
-              <td>
-                <button onClick={() => setManagingId(location.id)}>Manage</button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {loading ? (
+        <p className="loading-state">Loading facilities…</p>
+      ) : sorted.length === 0 ? (
+        <p className="empty-state">No facilities yet.</p>
+      ) : (
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Facility</th>
+                <th>Courts</th>
+                <th>Waiting Room</th>
+                <th>In Queue</th>
+                <th>On Court</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((location) => (
+                <tr key={location.id}>
+                  <td>{location.name}</td>
+                  <td>
+                    {location.active_court_count}/{location.court_count}
+                  </td>
+                  <td>{location.waiting_room_count}</td>
+                  <td>{location.in_queue_count}</td>
+                  <td>{location.on_court_count}</td>
+                  <td>
+                    {location.is_active ? (
+                      <Badge status="success">Active</Badge>
+                    ) : (
+                      <Badge status="neutral">Deactivated</Badge>
+                    )}
+                  </td>
+                  <td>
+                    <button className="btn btn-secondary btn-sm" onClick={() => setManagingId(location.id)}>
+                      Manage
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {addOpen && (
         <Modal title="Add Location" onClose={() => setAddOpen(false)}>

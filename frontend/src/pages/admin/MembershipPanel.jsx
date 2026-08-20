@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
+import { Plus } from "lucide-react";
 import { useAuth } from "../../AuthContext";
 import { adminApi } from "../../apiClient";
 import Modal from "../../components/Modal";
+import Badge from "../../components/Badge";
 
 function formatPhone(digits) {
   if (!digits) return "—";
@@ -64,7 +66,7 @@ function AddMemberForm({ onCreate }) {
         <input type="date" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} />
       </label>
       {error && <p className="error">{error}</p>}
-      <button type="submit" disabled={submitting || phone.length !== 10}>
+      <button type="submit" className="btn btn-primary" disabled={submitting || phone.length !== 10}>
         {submitting ? "Adding…" : "Add member"}
       </button>
     </form>
@@ -102,7 +104,14 @@ function ManageMembershipModal({ member, onClose, onEdit, onRenew, history }) {
 
   return (
     <Modal title={`Manage ${member.display_name}`} onClose={onClose}>
-      <p className="muted">Status: {member.status === "active" ? "Active" : "Expired"}</p>
+      <p>
+        Status:{" "}
+        {member.status === "active" ? (
+          <Badge status="success">Active</Badge>
+        ) : (
+          <Badge status="neutral">Expired</Badge>
+        )}
+      </p>
 
       {member.status === "active" ? (
         <form onSubmit={handleSave} className="form">
@@ -114,7 +123,7 @@ function ManageMembershipModal({ member, onClose, onEdit, onRenew, history }) {
             Expiration (blank = none)
             <input type="date" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} />
           </label>
-          <button type="submit" disabled={phone.length !== 10}>
+          <button type="submit" className="btn btn-primary btn-sm" disabled={phone.length !== 10}>
             Save
           </button>
         </form>
@@ -124,14 +133,14 @@ function ManageMembershipModal({ member, onClose, onEdit, onRenew, history }) {
             Renew with phone number
             <input {...phoneInputProps(renewPhone, setRenewPhone)} required />
           </label>
-          <button type="submit" disabled={renewPhone.length !== 10}>
+          <button type="submit" className="btn btn-primary btn-sm" disabled={renewPhone.length !== 10}>
             Renew membership
           </button>
         </form>
       )}
       {error && <p className="error">{error}</p>}
 
-      <h4>Membership periods</h4>
+      <h4 style={{ marginTop: "var(--space-5)" }}>Membership periods</h4>
       <ul className="pair-list">
         {member.periods.map((p) => (
           <li key={p.id}>
@@ -162,6 +171,7 @@ function ManageMembershipModal({ member, onClose, onEdit, onRenew, history }) {
 export default function MembershipPanel() {
   const { token } = useAuth();
   const [members, setMembers] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [addOpen, setAddOpen] = useState(false);
   const [managingId, setManagingId] = useState(null);
   const [managingHistory, setManagingHistory] = useState([]);
@@ -170,6 +180,7 @@ export default function MembershipPanel() {
   async function refresh() {
     const data = await adminApi.listMemberships(token);
     setMembers(data);
+    setLoading(false);
   }
 
   useEffect(() => {
@@ -210,45 +221,66 @@ export default function MembershipPanel() {
   return (
     <div>
       {credential && (
-        <div className="card">
+        <div className="credential-reveal" style={{ marginBottom: "var(--space-4)" }}>
           <h3>Generated credentials</h3>
           <p>
             {credential.username}: <strong>{credential.password}</strong>
           </p>
-          <button onClick={() => setCredential(null)}>Dismiss</button>
+          <button className="btn btn-secondary btn-sm" onClick={() => setCredential(null)}>
+            Dismiss
+          </button>
         </div>
       )}
 
       <div className="admin-toolbar">
-        <button onClick={() => setAddOpen(true)}>+ Add Member</button>
+        <button className="btn btn-primary" onClick={() => setAddOpen(true)}>
+          <Plus size={15} />
+          Add Member
+        </button>
       </div>
 
-      <table className="history-table">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Phone</th>
-            <th>Status</th>
-            <th>Member Since</th>
-            <th>Expires</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {sorted.map((member) => (
-            <tr key={member.id}>
-              <td>{member.display_name}</td>
-              <td>{formatPhone(member.phone_number)}</td>
-              <td>{member.status === "active" ? "Active" : "Expired"}</td>
-              <td>{new Date(member.member_since).toLocaleDateString()}</td>
-              <td>{member.expires_at ? new Date(member.expires_at).toLocaleDateString() : "No expiration"}</td>
-              <td>
-                <button onClick={() => openManage(member)}>Manage</button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {loading ? (
+        <p className="loading-state">Loading members…</p>
+      ) : sorted.length === 0 ? (
+        <p className="empty-state">No members yet.</p>
+      ) : (
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Phone</th>
+                <th>Status</th>
+                <th>Member Since</th>
+                <th>Expires</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((member) => (
+                <tr key={member.id}>
+                  <td>{member.display_name}</td>
+                  <td>{formatPhone(member.phone_number)}</td>
+                  <td>
+                    {member.status === "active" ? (
+                      <Badge status="success">Active</Badge>
+                    ) : (
+                      <Badge status="neutral">Expired</Badge>
+                    )}
+                  </td>
+                  <td>{new Date(member.member_since).toLocaleDateString()}</td>
+                  <td>{member.expires_at ? new Date(member.expires_at).toLocaleDateString() : "No expiration"}</td>
+                  <td>
+                    <button className="btn btn-secondary btn-sm" onClick={() => openManage(member)}>
+                      Manage
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {addOpen && (
         <Modal title="Add Member" onClose={() => setAddOpen(false)}>

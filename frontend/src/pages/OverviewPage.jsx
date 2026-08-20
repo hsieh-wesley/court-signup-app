@@ -1,7 +1,11 @@
 import { useEffect, useState } from "react";
+import { UserMinus } from "lucide-react";
 import { useFacility } from "../LocationContext";
 import { api } from "../apiClient";
 import { formatSeconds, useLiveCountdown } from "../timeFormat";
+import { courtStatus, COURT_STATUS_BADGE, COURT_STATUS_LABEL } from "../courtStatus";
+import Modal from "../components/Modal";
+import Badge from "../components/Badge";
 
 function emptyPlayer() {
   return { username: "", password: "" };
@@ -25,6 +29,19 @@ function PlayerFields({ label, player, onChange }) {
         required
       />
     </label>
+  );
+}
+
+function GroupSizeTabs({ groupSize, setGroupSize }) {
+  return (
+    <div className="tabs tabs-segmented">
+      <button type="button" className={groupSize === 2 ? "active" : ""} onClick={() => setGroupSize(2)}>
+        2 players
+      </button>
+      <button type="button" className={groupSize === 4 ? "active" : ""} onClick={() => setGroupSize(4)}>
+        4 players
+      </button>
+    </div>
   );
 }
 
@@ -89,56 +106,39 @@ function CourtJoinModal({ court, entry, onClose, onJoined }) {
   }
 
   return (
-    <div className="modal-backdrop" onClick={handleCancel}>
-      <div className="modal card" onClick={(e) => e.stopPropagation()}>
-        <h3>
-          {isCreate
-            ? `Sign up for ${court.name}${court.active_entry ? " (joins the queue)" : ""}`
-            : `Join the waiting pair on ${court.name}`}
-        </h3>
-        {isCreate && (
-          <div className="mode-toggle">
-            <button
-              type="button"
-              className={groupSize === 2 ? "active" : ""}
-              onClick={() => setGroupSize(2)}
-            >
-              2 players
-            </button>
-            <button
-              type="button"
-              className={groupSize === 4 ? "active" : ""}
-              onClick={() => setGroupSize(4)}
-            >
-              4 players
-            </button>
-          </div>
-        )}
-        <form onSubmit={handleSubmit} className="form">
+    <Modal
+      title={
+        isCreate
+          ? `Sign up for ${court.name}${court.active_entry ? " (joins the queue)" : ""}`
+          : `Join the waiting pair on ${court.name}`
+      }
+      onClose={handleCancel}
+    >
+      {isCreate && <GroupSizeTabs groupSize={groupSize} setGroupSize={setGroupSize} />}
+      <form onSubmit={handleSubmit} className="form">
+        <fieldset>
+          <legend>{isCreate && groupSize === 4 ? "Pair A" : "Player 1 & 2"}</legend>
+          <PlayerFields label="Player 1" player={p1} onChange={setP1} />
+          <PlayerFields label="Player 2" player={p2} onChange={setP2} />
+        </fieldset>
+        {isCreate && groupSize === 4 && (
           <fieldset>
-            <legend>{isCreate && groupSize === 4 ? "Pair A" : "Player 1 & 2"}</legend>
-            <PlayerFields label="Player 1" player={p1} onChange={setP1} />
-            <PlayerFields label="Player 2" player={p2} onChange={setP2} />
+            <legend>Pair B</legend>
+            <PlayerFields label="Player 3" player={p3} onChange={setP3} />
+            <PlayerFields label="Player 4" player={p4} onChange={setP4} />
           </fieldset>
-          {isCreate && groupSize === 4 && (
-            <fieldset>
-              <legend>Pair B</legend>
-              <PlayerFields label="Player 3" player={p3} onChange={setP3} />
-              <PlayerFields label="Player 4" player={p4} onChange={setP4} />
-            </fieldset>
-          )}
-          {error && <p className="error">{error}</p>}
-          <div className="mode-toggle">
-            <button type="submit" disabled={submitting}>
-              {submitting ? "Joining…" : "Join"}
-            </button>
-            <button type="button" onClick={handleCancel}>
-              Cancel
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+        )}
+        {error && <p className="error">{error}</p>}
+        <div className="button-row">
+          <button type="submit" className="btn btn-primary" disabled={submitting}>
+            {submitting ? "Joining…" : "Join"}
+          </button>
+          <button type="button" className="btn btn-secondary" onClick={handleCancel}>
+            Cancel
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
@@ -194,7 +194,8 @@ function QuickUnsignWidget({ onChanged }) {
 
   if (!expanded) {
     return (
-      <button className="quick-unsign-toggle" onClick={() => setExpanded(true)}>
+      <button className="btn btn-secondary" onClick={() => setExpanded(true)}>
+        <UserMinus size={15} />
         Unsign
       </button>
     );
@@ -203,22 +204,7 @@ function QuickUnsignWidget({ onChanged }) {
   return (
     <div className="card quick-unsign-card">
       <h3>Unsign</h3>
-      <div className="mode-toggle">
-        <button
-          type="button"
-          className={groupSize === 2 ? "active" : ""}
-          onClick={() => setGroupSize(2)}
-        >
-          2 players
-        </button>
-        <button
-          type="button"
-          className={groupSize === 4 ? "active" : ""}
-          onClick={() => setGroupSize(4)}
-        >
-          4 players
-        </button>
-      </div>
+      <GroupSizeTabs groupSize={groupSize} setGroupSize={setGroupSize} />
       <form onSubmit={handleSubmit} className="form">
         <fieldset>
           <legend>{groupSize === 4 ? "Pair A" : "Player 1 & 2"}</legend>
@@ -233,11 +219,11 @@ function QuickUnsignWidget({ onChanged }) {
           </fieldset>
         )}
         {error && <p className="error">{error}</p>}
-        <div className="mode-toggle">
-          <button type="submit" disabled={submitting}>
+        <div className="button-row">
+          <button type="submit" className="btn btn-primary" disabled={submitting}>
             {submitting ? "Unsigning…" : "Unsign"}
           </button>
-          <button type="button" onClick={reset}>
+          <button type="button" className="btn btn-secondary" onClick={reset}>
             Cancel
           </button>
         </div>
@@ -249,18 +235,18 @@ function QuickUnsignWidget({ onChanged }) {
 function CourtCard({ court, onPick }) {
   const active = court.active_entry;
   const remaining = useLiveCountdown(active?.seconds_remaining ?? null, active?.id);
+  const status = courtStatus(court);
 
   return (
     <div className="card">
-      <h3>
-        {court.name}
-        {!court.is_active && <span className="badge">Deactivated</span>}
-      </h3>
+      <div className="court-card-header">
+        <h3 style={{ margin: 0 }}>{court.name}</h3>
+        <Badge status={COURT_STATUS_BADGE[status]}>{COURT_STATUS_LABEL[status]}</Badge>
+      </div>
+
       {active ? (
         <div>
-          <p className="muted">
-            {remaining != null ? `${formatSeconds(remaining)} remaining` : "In progress"}
-          </p>
+          {remaining != null && <div className="court-timer">{formatSeconds(remaining)}</div>}
           <ul className="pair-list">
             {active.pairs.map((pair) => (
               <li key={pair.id}>
@@ -270,28 +256,39 @@ function CourtCard({ court, onPick }) {
           </ul>
         </div>
       ) : (
-        <p className="muted">Open</p>
+        <p className="muted">{court.is_active ? "Open — no one on this court" : "Not accepting signups"}</p>
       )}
+
       {court.waiting_entries.length > 0 && (
         <>
-          <h4>Waiting</h4>
+          <div className="court-section-label">Waiting queue</div>
           <ul className="pair-list">
-            {court.waiting_entries.map((entry) => (
+            {court.waiting_entries.map((entry, i) => (
               <li key={entry.id}>
-                <span>
+                <span style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+                  <span className="queue-index">{i + 1}</span>
                   {entry.pairs.map((p) => p.players.join(" & ")).join(" + ")}
-                  {entry.open_slot && <span className="badge">Open slot</span>}
+                  {entry.open_slot && <Badge status="warning">Open slot</Badge>}
                 </span>
                 {entry.open_slot && (
-                  <button onClick={() => onPick({ court, entry })}>Join this pair</button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => onPick({ court, entry })}>
+                    Join this pair
+                  </button>
                 )}
               </li>
             ))}
           </ul>
         </>
       )}
+
       {court.is_active && (
-        <button onClick={() => onPick({ court, entry: null })}>Sign Up</button>
+        <button
+          className="btn btn-primary"
+          style={{ marginTop: "var(--space-4)", width: "100%" }}
+          onClick={() => onPick({ court, entry: null })}
+        >
+          Sign Up
+        </button>
       )}
     </div>
   );
@@ -300,15 +297,18 @@ function CourtCard({ court, onPick }) {
 export default function OverviewPage() {
   const { selectedLocationId, selectedLocation } = useFacility();
   const [courts, setCourts] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [modalTarget, setModalTarget] = useState(null);
 
   async function refresh() {
     if (!selectedLocationId) return;
     const data = await api.getCourts(selectedLocationId);
     setCourts(data);
+    setLoading(false);
   }
 
   useEffect(() => {
+    setLoading(true);
     refresh();
     const interval = setInterval(refresh, 5000);
     return () => clearInterval(interval);
@@ -317,7 +317,7 @@ export default function OverviewPage() {
   if (!selectedLocation) {
     return (
       <div className="page">
-        <p className="muted">Loading facility…</p>
+        <p className="loading-state">Loading facility…</p>
       </div>
     );
   }
@@ -327,11 +327,17 @@ export default function OverviewPage() {
       <div className="overview-toolbar">
         <QuickUnsignWidget onChanged={refresh} />
       </div>
-      <div className="card-grid">
-        {courts.map((court) => (
-          <CourtCard key={court.id} court={court} onPick={setModalTarget} />
-        ))}
-      </div>
+      {loading ? (
+        <p className="loading-state">Loading courts…</p>
+      ) : courts.length === 0 ? (
+        <p className="empty-state">No courts configured for this facility yet.</p>
+      ) : (
+        <div className="card-grid">
+          {courts.map((court) => (
+            <CourtCard key={court.id} court={court} onPick={setModalTarget} />
+          ))}
+        </div>
+      )}
       {modalTarget && (
         <CourtJoinModal
           court={modalTarget.court}

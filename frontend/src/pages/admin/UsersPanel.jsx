@@ -1,13 +1,22 @@
 import { useEffect, useMemo, useState } from "react";
+import { MoreHorizontal, Plus } from "lucide-react";
 import { useAuth } from "../../AuthContext";
 import { adminApi } from "../../apiClient";
 import Modal from "../../components/Modal";
+import Badge from "../../components/Badge";
 
 const STATUS_LABELS = {
   on_court: "On Court",
   in_queue: "In Queue",
   waiting_room: "Waiting Room",
   not_checked_in: "Not Checked In",
+};
+
+const STATUS_BADGE = {
+  on_court: "accent",
+  in_queue: "warning",
+  waiting_room: "success",
+  not_checked_in: "neutral",
 };
 
 function statusText(player) {
@@ -29,7 +38,7 @@ function loginText(player) {
 function CredentialBanner({ credentials, onDismiss }) {
   if (!credentials.length) return null;
   return (
-    <div className="card">
+    <div className="credential-reveal" style={{ marginBottom: "var(--space-4)" }}>
       <h3>Generated credentials</h3>
       <ul className="pair-list">
         {credentials.map((c) => (
@@ -40,7 +49,9 @@ function CredentialBanner({ credentials, onDismiss }) {
           </li>
         ))}
       </ul>
-      <button onClick={onDismiss}>Dismiss</button>
+      <button className="btn btn-secondary btn-sm" onClick={onDismiss}>
+        Dismiss
+      </button>
     </div>
   );
 }
@@ -73,13 +84,13 @@ function AddPlayerForm({ onCreate }) {
         Display name
         <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} required />
       </label>
-      <label>
+      <label style={{ flexDirection: "row", alignItems: "center", gap: "var(--space-2)" }}>
         <input
           type="checkbox"
           checked={enableLogin}
           onChange={(e) => setEnableLogin(e.target.checked)}
         />
-        {" "}Enable login access
+        Enable login access
       </label>
       {enableLogin && (
         <label>
@@ -88,7 +99,7 @@ function AddPlayerForm({ onCreate }) {
         </label>
       )}
       {error && <p className="error">{error}</p>}
-      <button type="submit" disabled={submitting}>
+      <button type="submit" className="btn btn-primary" disabled={submitting}>
         {submitting ? "Creating…" : "Create player"}
       </button>
     </form>
@@ -126,9 +137,11 @@ function EditPlayerForm({ player, onSave, onCancel }) {
         </label>
       )}
       {error && <p className="error">{error}</p>}
-      <div className="mode-toggle">
-        <button type="submit">Save</button>
-        <button type="button" onClick={onCancel}>
+      <div className="button-row">
+        <button type="submit" className="btn btn-primary btn-sm">
+          Save
+        </button>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={onCancel}>
           Cancel
         </button>
       </div>
@@ -159,11 +172,15 @@ function PlayerRow({ player, onAction, onSave }) {
   return (
     <tr>
       <td>
-        {player.display_name}
-        {!player.is_active && <span className="badge">Archived</span>}
+        <span style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+          {player.display_name}
+          {!player.is_active && <Badge status="neutral">Archived</Badge>}
+        </span>
       </td>
       <td>{player.username ? `@${player.username}` : "—"}</td>
-      <td>{statusText(player)}</td>
+      <td>
+        <Badge status={STATUS_BADGE[player.status]}>{statusText(player)}</Badge>
+      </td>
       <td>{loginText(player)}</td>
       <td>
         {player.checked_in_at
@@ -176,24 +193,38 @@ function PlayerRow({ player, onAction, onSave }) {
       <td>{new Date(player.created_at).toLocaleDateString()}</td>
       <td>
         <div className="row-actions">
-          <button onClick={() => setEditing(true)}>Edit</button>
+          <button className="btn btn-secondary btn-sm" onClick={() => setEditing(true)}>
+            Edit
+          </button>
           <details className="actions-menu">
-            <summary>⋯</summary>
+            <summary aria-label="More actions">
+              <MoreHorizontal size={16} />
+            </summary>
             <div className="actions-menu-list">
               {!player.has_login && (
-                <button onClick={() => onAction("addLogin", player)}>Add Login</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => onAction("addLogin", player)}>
+                  Add Login
+                </button>
               )}
               {player.has_login && player.login_active && (
                 <>
-                  <button onClick={() => onAction("resetPassword", player)}>Reset Password</button>
-                  <button onClick={() => onAction("disableLogin", player)}>Disable Login</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => onAction("resetPassword", player)}>
+                    Reset Password
+                  </button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => onAction("disableLogin", player)}>
+                    Disable Login
+                  </button>
                 </>
               )}
               {player.has_login && !player.login_active && (
-                <button onClick={() => onAction("addLogin", player)}>Re-enable Login</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => onAction("addLogin", player)}>
+                  Re-enable Login
+                </button>
               )}
               {player.is_active && (
-                <button onClick={() => onAction("deactivate", player)}>Deactivate</button>
+                <button className="btn btn-ghost btn-sm" style={{ color: "var(--color-danger)" }} onClick={() => onAction("deactivate", player)}>
+                  Deactivate
+                </button>
               )}
             </div>
           </details>
@@ -213,6 +244,7 @@ const SORTERS = {
 export default function UsersPanel({ locationId }) {
   const { token } = useAuth();
   const [players, setPlayers] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [credentials, setCredentials] = useState([]);
   const [error, setError] = useState(null);
   const [search, setSearch] = useState("");
@@ -224,9 +256,11 @@ export default function UsersPanel({ locationId }) {
   async function refresh() {
     const data = await adminApi.listPlayers(token, locationId);
     setPlayers(data);
+    setLoading(false);
   }
 
   useEffect(() => {
+    setLoading(true);
     refresh();
   }, [locationId]);
 
@@ -296,49 +330,74 @@ export default function UsersPanel({ locationId }) {
       {error && <p className="error">{error}</p>}
 
       <div className="admin-toolbar">
-        <input
-          placeholder="Search name or username"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-          <option value="all">All</option>
-          <option value="waiting_room">Waiting Room</option>
-          <option value="in_queue">In Queue</option>
-          <option value="on_court">On Court</option>
-          <option value="not_checked_in">Not Checked In</option>
-        </select>
-        <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
-          <option value="name">Sort: Name</option>
-          <option value="status">Sort: Status</option>
-          <option value="checkin">Sort: Check-In Time</option>
-          <option value="created">Sort: Account Created</option>
-        </select>
-        <button onClick={() => setAddOpen(true)}>+ Add Player</button>
+        <label>
+          Search
+          <input
+            placeholder="Name or username"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </label>
+        <label>
+          Status
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+            <option value="all">All</option>
+            <option value="waiting_room">Waiting Room</option>
+            <option value="in_queue">In Queue</option>
+            <option value="on_court">On Court</option>
+            <option value="not_checked_in">Not Checked In</option>
+          </select>
+        </label>
+        <label>
+          Sort
+          <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+            <option value="name">Name</option>
+            <option value="status">Status</option>
+            <option value="checkin">Check-In Time</option>
+            <option value="created">Account Created</option>
+          </select>
+        </label>
+        <span className="spacer" />
+        <button className="btn btn-primary" onClick={() => setAddOpen(true)}>
+          <Plus size={15} />
+          Add Player
+        </button>
       </div>
 
-      <table className="history-table">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Username</th>
-            <th>Status</th>
-            <th>Login</th>
-            <th>Checked In</th>
-            <th>Account Created</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {visible.map((player) => (
-            <PlayerRow key={player.id} player={player} onAction={handleAction} onSave={handleSave} />
-          ))}
-        </tbody>
-      </table>
+      {loading ? (
+        <p className="loading-state">Loading players…</p>
+      ) : visible.length === 0 ? (
+        <p className="empty-state">No players match these filters.</p>
+      ) : (
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Username</th>
+                <th>Status</th>
+                <th>Login</th>
+                <th>Checked In</th>
+                <th>Account Created</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map((player) => (
+                <PlayerRow key={player.id} player={player} onAction={handleAction} onSave={handleSave} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <details className="dev-tools" open={testToolsOpen} onToggle={(e) => setTestToolsOpen(e.target.open)}>
         <summary>Development/Test Tools</summary>
-        <button onClick={handleBulkTest}>Generate 8 Test Players</button>
+        <p style={{ marginTop: "var(--space-2)" }}>
+          <button className="btn btn-secondary btn-sm" onClick={handleBulkTest}>
+            Generate 8 Test Players
+          </button>
+        </p>
       </details>
 
       {addOpen && (
