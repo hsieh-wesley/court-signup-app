@@ -1,4 +1,4 @@
-import { Navigate, NavLink, Route, Routes } from "react-router-dom";
+import { Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 import { LogOut, ShieldCheck } from "lucide-react";
 import { AuthProvider, useAuth } from "./AuthContext";
 import { LocationProvider, useFacility } from "./LocationContext";
@@ -39,12 +39,14 @@ function Nav() {
   // nav element is shown at all while logged out — the only way in is
   // typing "admin"/"staff" on the Join page — so a front-desk or courtside
   // kiosk left logged out shows nothing but the CourtFlow brand and
-  // Join/Overview. Each physical kiosk is bound to one facility in
-  // practice: an admin/staff signs in once to pick it (LocationSwitcher,
-  // below, only renders for them), and the choice persists in that
-  // browser (LocationContext -> localStorage) after they log back out —
-  // the public never gets a live control to switch facilities themselves.
+  // Join/Overview. LocationSwitcher only ever appears on the Admin
+  // console, never on Join/Overview: Overview always shows every active
+  // facility combined (no single-location concept to switch), and Join's
+  // register/check-in still targets whatever's currently selected, just
+  // without a live picker cluttering the public-facing screens.
   const { token, username, isAdmin, logout } = useAuth();
+  const { pathname } = useLocation();
+  const showLocationSwitcher = pathname.startsWith("/admin");
   return (
     <nav className="nav">
       <NavLink to="/overview" className="nav-brand">
@@ -58,7 +60,7 @@ function Nav() {
       <span className="spacer" />
       {token && isAdmin && (
         <div className="nav-account">
-          <LocationSwitcher />
+          {showLocationSwitcher && <LocationSwitcher />}
           <span className="nav-account-badge">
             <ShieldCheck size={14} />
             {username}

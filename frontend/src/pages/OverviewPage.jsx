@@ -1,6 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { UserMinus } from "lucide-react";
-import { useFacility } from "../LocationContext";
 import { api } from "../apiClient";
 import { formatSeconds, useLiveCountdown } from "../timeFormat";
 import { courtStatus, COURT_STATUS_BADGE, COURT_STATUS_LABEL } from "../courtStatus";
@@ -294,33 +293,35 @@ function CourtCard({ court, onPick }) {
   );
 }
 
+// No per-location picker here by design — Overview always shows every
+// active facility's courts combined, grouped by location only when more
+// than one is actually in play (a single-facility deployment renders
+// exactly as before, with no group heading at all).
 export default function OverviewPage() {
-  const { selectedLocationId, selectedLocation } = useFacility();
   const [courts, setCourts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalTarget, setModalTarget] = useState(null);
 
   async function refresh() {
-    if (!selectedLocationId) return;
-    const data = await api.getCourts(selectedLocationId);
+    const data = await api.getCourts();
     setCourts(data);
     setLoading(false);
   }
 
   useEffect(() => {
-    setLoading(true);
     refresh();
     const interval = setInterval(refresh, 5000);
     return () => clearInterval(interval);
-  }, [selectedLocationId]);
+  }, []);
 
-  if (!selectedLocation) {
-    return (
-      <div className="page">
-        <p className="loading-state">Loading facility…</p>
-      </div>
-    );
-  }
+  const groups = useMemo(() => {
+    const byLocation = new Map();
+    for (const court of courts) {
+      if (!byLocation.has(court.location)) byLocation.set(court.location, []);
+      byLocation.get(court.location).push(court);
+    }
+    return [...byLocation.entries()];
+  }, [courts]);
 
   return (
     <div className="page">
@@ -330,13 +331,18 @@ export default function OverviewPage() {
       {loading ? (
         <p className="loading-state">Loading courts…</p>
       ) : courts.length === 0 ? (
-        <p className="empty-state">No courts configured for this facility yet.</p>
+        <p className="empty-state">No courts configured yet.</p>
       ) : (
-        <div className="card-grid">
-          {courts.map((court) => (
-            <CourtCard key={court.id} court={court} onPick={setModalTarget} />
-          ))}
-        </div>
+        groups.map(([locationName, locationCourts]) => (
+          <div key={locationName}>
+            {groups.length > 1 && <h2 className="overview-location-heading">{locationName}</h2>}
+            <div className="card-grid">
+              {locationCourts.map((court) => (
+                <CourtCard key={court.id} court={court} onPick={setModalTarget} />
+              ))}
+            </div>
+          </div>
+        ))
       )}
       {modalTarget && (
         <CourtJoinModal

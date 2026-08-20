@@ -1,13 +1,14 @@
 import pytest
 from rest_framework.test import APIClient
 
-from courts import services
+from courts import admin_services, services
 from courts.models import Player
 from courts.tests.factories import (
     credential,
     future_expiry,
     make_admin_user,
     make_court,
+    make_location,
     make_user,
     past_expiry,
 )
@@ -21,6 +22,38 @@ def test_court_list_requires_no_auth():
     client = APIClient()
     resp = client.get("/api/courts/")
     assert resp.status_code == 200
+
+
+# Overview's combined "every location" board (no location_id given) shows
+# every active facility's courts together, but never a deactivated one's.
+def test_court_list_without_location_id_combines_active_locations_only():
+    loc_a = make_location("Location A")
+    loc_b = make_location("Location B")
+    court_a = make_court(location=loc_a, number=1)
+    court_b = make_court(location=loc_b, number=1)
+    admin_services.deactivate_location(loc_b)
+
+    client = APIClient()
+    resp = client.get("/api/courts/")
+
+    assert resp.status_code == 200
+    ids = {c["id"] for c in resp.data}
+    assert court_a.id in ids
+    assert court_b.id not in ids
+
+
+def test_court_list_with_explicit_location_id_still_scopes_to_one_location():
+    loc_a = make_location("Location A")
+    loc_b = make_location("Location B")
+    court_a = make_court(location=loc_a, number=1)
+    court_b = make_court(location=loc_b, number=1)
+
+    client = APIClient()
+    resp = client.get(f"/api/courts/?location_id={loc_a.id}")
+
+    ids = {c["id"] for c in resp.data}
+    assert ids == {court_a.id}
+    assert court_b.id not in ids
 
 
 # Public kiosk model: no token needed, but credentials are still required and verified
