@@ -108,7 +108,7 @@ function LocationManageModal({ location, onClose, onAction }) {
 }
 
 export default function LocationsPanel() {
-  const { token } = useAuth();
+  const { token, isSuperuser } = useAuth();
   const [locations, setLocations] = useState([]);
   const [error, setError] = useState(null);
   const [addOpen, setAddOpen] = useState(false);
@@ -161,9 +161,11 @@ export default function LocationsPanel() {
     <div>
       {error && <p className="error">{error}</p>}
 
-      <div className="admin-toolbar">
-        <button onClick={() => setAddOpen(true)}>+ Add Location</button>
-      </div>
+      {isSuperuser && (
+        <div className="admin-toolbar">
+          <button onClick={() => setAddOpen(true)}>+ Add Location</button>
+        </div>
+      )}
 
       <table className="history-table">
         <thead>

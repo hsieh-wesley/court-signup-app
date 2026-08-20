@@ -1,4 +1,5 @@
 import random
+import secrets
 
 ANIMALS = [
     "dog", "cat", "fox", "owl", "bear", "wolf", "lion", "tiger", "panda", "eagle",
@@ -24,6 +25,12 @@ def generate_password() -> str:
 def generate_member_password() -> str:
     """animal only, no digits — drawn fresh on every member check-in."""
     return random.choice(MEMBER_ANIMALS)
+
+
+def generate_admin_password() -> str:
+    """A real administrative credential (staff's reset password) — not the
+    kiosk's playful animal schemes, cryptographically random via `secrets`."""
+    return secrets.token_urlsafe(9)
 
 
 def generate_unique_passwords(n: int) -> list[str]:

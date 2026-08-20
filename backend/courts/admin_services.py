@@ -17,7 +17,7 @@ from .models import (
     PlayerSession,
     QueueEntry,
 )
-from .password_gen import generate_password, generate_unique_passwords
+from .password_gen import generate_admin_password, generate_password, generate_unique_passwords
 from .services import ServiceError, _end_pair, validate_new_username
 
 User = get_user_model()
@@ -196,6 +196,23 @@ def update_membership(membership, phone_number=None, expires_at=None):
         membership.expires_at = expires_at
     membership.save()
     return membership
+
+
+def reset_staff_password():
+    """Admin-only (enforced at the view layer). In place, no account
+    recreation — a fresh secure password replaces the old one via the
+    normal Django hashing (set_password), and any existing staff
+    PlayerSession is invalidated immediately. The plaintext is returned
+    once for display and never stored or retrievable again afterward."""
+    try:
+        staff = User.objects.get(username="staff")
+    except User.DoesNotExist:
+        raise ServiceError("No staff account exists yet — run seed_staff_account first.")
+    plaintext = generate_admin_password()
+    staff.set_password(plaintext)
+    staff.save()
+    PlayerSession.objects.filter(user=staff).delete()
+    return plaintext
 
 
 def create_test_players(n=8):

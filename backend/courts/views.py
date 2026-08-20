@@ -63,6 +63,7 @@ class LoginView(APIView):
             "token": session.key,
             "username": user.username,
             "is_staff": user.is_staff,
+            "is_superuser": user.is_superuser,
             "location_id": location.id if location else None,
             "location_name": location.name if location else None,
         })
@@ -195,7 +196,7 @@ class QueueEntryCreateView(APIView):
         court = serializer.validated_data["court_id"]
         try:
             pairs = services.verify_pair_credentials(
-                serializer.validated_data["pairs"], court.location
+                serializer.validated_data["pairs"], court
             )
             created_by = User.objects.get(username=pairs[0][0])
             entry = services.create_queue_entry(
@@ -222,7 +223,7 @@ class JoinOpenSlotView(APIView):
         serializer.is_valid(raise_exception=True)
         try:
             usernames = services.verify_pair_credentials(
-                [serializer.validated_data["credentials"]], entry.court.location
+                [serializer.validated_data["credentials"]], entry.court
             )[0]
             requesting_user = User.objects.get(username=usernames[0])
             entry = services.join_open_slot(

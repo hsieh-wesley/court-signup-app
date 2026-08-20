@@ -324,16 +324,20 @@ def _check_not_expired(user):
         raise ServiceError("This account has expired.", status=403)
 
 
-def _reject_if_active_elsewhere(user, target_location):
-    """A player can't be active/waiting at two facilities at once. Under
-    the public-kiosk model there's no login moment to check this at, so
-    it's enforced here — at the point of joining — instead."""
+def _reject_if_active_elsewhere(user, target_court):
+    """A player can't be active/waiting on two courts at once — not even
+    two courts at the same facility. Excludes only the exact court being
+    targeted (not the whole facility), so retrying the SAME court still
+    falls through to _conflicting_usernames' more specific "already
+    signed up on X" message instead of this generic one firing first.
+    Under the public-kiosk model there's no login moment to check this
+    at, so it's enforced here — at the point of joining — instead."""
     conflict = (
         Pair.objects.filter(
             Q(player_1=user) | Q(player_2=user),
             entry__status__in=[QueueEntry.Status.WAITING, QueueEntry.Status.ACTIVE],
         )
-        .exclude(entry__court__location=target_location)
+        .exclude(entry__court=target_court)
         .select_related("entry__court__location")
         .first()
     )
@@ -376,18 +380,20 @@ def has_facility_presence_today(user, location):
     ).exists()
 
 
-def verify_pair_credentials(pairs_credentials, target_location):
+def verify_pair_credentials(pairs_credentials, target_court):
     """`pairs_credentials` is a list of 1-2 groups, each a list of 2
     {"username", "password"} dicts. Every member's credentials are verified
     — there is no "self" exemption, since the public kiosk has no notion of
-    who's already signed in. Also enforces the single-facility invariant
-    for each verified player against `target_location`, and — since Sign Up
+    who's already signed in. Also enforces the single-court invariant for
+    each verified player against `target_court` (a player can only ever be
+    active/waiting on one court anywhere at a time), and — since Sign Up
     and Join This Pair are the only two flows that route through here —
     stamps a same-day check-in for anyone who doesn't already have a valid
     one, so a player never has to tap Check In separately just to show up
     on a court. Returns the equivalent plain [[username, username], ...]
     structure for services.create_queue_entry / join_open_slot, which are
     unchanged."""
+    target_location = target_court.location
     result = []
     for group in pairs_credentials:
         usernames = []
@@ -395,7 +401,7 @@ def verify_pair_credentials(pairs_credentials, target_location):
             username = member.get("username", "")
             password = member.get("password", "")
             user = verify_credential(username, password)
-            _reject_if_active_elsewhere(user, target_location)
+            _reject_if_active_elsewhere(user, target_court)
             if not has_facility_presence_today(user, target_location):
                 activity_log.log_player_auth_event(user, target_location, LoginLog.Context.CHECK_IN)
             usernames.append(username)

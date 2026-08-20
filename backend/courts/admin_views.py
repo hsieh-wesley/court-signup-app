@@ -25,7 +25,7 @@ from .admin_serializers import (
     LoginLogSerializer,
 )
 from .models import Court, CourtActivityLog, Location, LoginLog, Pair, Player, QueueEntry
-from .permissions import IsAdmin
+from .permissions import IsAdmin, IsSuperUser
 
 
 def _get_player_or_404(pk):
@@ -299,6 +299,9 @@ class AdminCourtDeactivateView(APIView):
 
 
 class AdminLocationListCreateView(APIView):
+    """GET is available to staff and admin alike; POST (creating a
+    brand-new facility) is admin/superuser-only."""
+
     permission_classes = [IsAdmin]
 
     def get(self, request):
@@ -307,6 +310,11 @@ class AdminLocationListCreateView(APIView):
         return Response(AdminLocationSerializer(locations, many=True, context=context).data)
 
     def post(self, request):
+        if not request.user.is_superuser:
+            return Response(
+                {"detail": "This action requires the admin account."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         serializer = AdminLocationCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
@@ -348,6 +356,20 @@ class AdminLocationCourtCountView(APIView):
         except services.ServiceError as exc:
             return Response({"detail": str(exc)}, status=exc.status)
         return Response(AdminLocationSerializer(location).data)
+
+
+class AdminStaffResetPasswordView(APIView):
+    """Admin/superuser-only — staff cannot reset its own password. In
+    place, no account recreation; invalidates any existing staff session."""
+
+    permission_classes = [IsSuperUser]
+
+    def post(self, request):
+        try:
+            plaintext = admin_services.reset_staff_password()
+        except services.ServiceError as exc:
+            return Response({"detail": str(exc)}, status=exc.status)
+        return Response({"password": plaintext})
 
 
 class AdminMembershipListCreateView(APIView):

@@ -19,9 +19,13 @@ def make_user(username, expires_at=None):
     return user
 
 
-def make_admin_user(username="admin"):
-    """A staff user with no Player record — admins aren't necessarily players."""
-    return User.objects.create_user(username=username, password="pw12345", is_staff=True)
+def make_admin_user(username="admin", is_superuser=True):
+    """A staff user with no Player record — admins aren't necessarily
+    players. Defaults to a full admin (is_superuser=True); pass
+    is_superuser=False to simulate the `staff` account's narrower access."""
+    return User.objects.create_user(
+        username=username, password="pw12345", is_staff=True, is_superuser=is_superuser
+    )
 
 
 def default_location():

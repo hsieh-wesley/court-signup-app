@@ -61,7 +61,7 @@ def test_verify_pair_credentials_rejects_player_active_at_another_facility():
         services.verify_pair_credentials(
             [[{"username": "alice", "password": "pw12345"},
               {"username": "carol", "password": "pw12345"}]],
-            other_court.location,
+            other_court,
         )
     assert exc_info.value.status == 409
     # Nothing about her original pair changed.
@@ -74,12 +74,35 @@ def test_verify_pair_credentials_allows_waiting_pair_same_facility():
     alice = make_user("alice")
     make_user("bob")
     services.create_queue_entry(court=court, pairs=[["alice", "bob"]], created_by=alice)
-    # Re-verifying alice for the SAME facility is never blocked by her own presence.
+    # Re-verifying alice for the SAME court she's already on is never
+    # blocked here — a same-court retry falls through to
+    # _conflicting_usernames' more specific "already signed up" message
+    # instead (that check lives in create_queue_entry/join_open_slot, not
+    # in verify_pair_credentials, so no exception is expected at this
+    # layer either way).
     services.verify_pair_credentials(
         [[{"username": "alice", "password": "pw12345"},
           {"username": "bob", "password": "pw12345"}]],
-        court.location,
+        court,
     )
+
+
+def test_verify_pair_credentials_rejects_different_court_same_facility():
+    court1 = make_court(number=1)
+    court2 = make_court(location=court1.location, number=2)
+    alice = make_user("alice")
+    make_user("bob")
+    make_user("carol")
+    services.create_queue_entry(court=court1, pairs=[["alice", "bob"]], created_by=alice)
+
+    with pytest.raises(services.ServiceError) as exc_info:
+        services.verify_pair_credentials(
+            [[{"username": "alice", "password": "pw12345"},
+              {"username": "carol", "password": "pw12345"}]],
+            court2,
+        )
+    assert exc_info.value.status == 409
+    assert "Court 1" in str(exc_info.value)
 
 
 # reset_password still invalidates any (rare/stale) PlayerSession rows.

@@ -322,6 +322,22 @@ button {
   cursor: pointer;
 }
 
+.password-field {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.password-field input {
+  flex: 1;
+}
+
+.password-reveal-toggle {
+  padding: 0.4rem 0.6rem;
+  background: #e2e8f0;
+  border: none;
+  border-radius: 6px;
+}
+
 .avatar-placeholder {
   width: 4rem;
   height: 4rem;

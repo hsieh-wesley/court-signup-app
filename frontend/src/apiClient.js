@@ -164,4 +164,7 @@ export const adminApi = {
       token,
       body: { phone_number: phoneNumber, expires_at: expiresAt },
     }),
+  // Admin/superuser-only — staff cannot call this on itself.
+  resetStaffPassword: (token) =>
+    request("/admin/staff/reset-password/", { method: "POST", token }),
 };

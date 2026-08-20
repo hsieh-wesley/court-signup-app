@@ -68,6 +68,11 @@ urlpatterns = [
         name="admin-location-court-count",
     ),
     path(
+        "staff/reset-password/",
+        views.AdminStaffResetPasswordView.as_view(),
+        name="admin-staff-reset-password",
+    ),
+    path(
         "memberships/",
         views.AdminMembershipListCreateView.as_view(),
         name="admin-membership-list-create",

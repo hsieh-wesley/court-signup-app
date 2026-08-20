@@ -5,6 +5,13 @@ import { api } from "../apiClient";
 
 const PASSWORD_VISIBLE_MS = 10000;
 
+// "admin"/"staff" are hidden-in-plain-sight words, not credentials — typing
+// either one here (exactly, case-insensitive) only navigates to the real
+// login form; it never authenticates anyone by itself. Checked before the
+// letter-vs-phone classification below, since both words are made of
+// letters and would otherwise be treated as a desired username.
+const ADMIN_WORDS = new Set(["admin", "staff"]);
+
 // One field classified by content, not length: any letter means "this is a
 // desired username" (self-registration); digits/phone-formatting only
 // means "this is a member's phone number" (check-in). A phone-shaped input
@@ -13,6 +20,7 @@ const PASSWORD_VISIBLE_MS = 10000;
 function classifyInput(raw) {
   const trimmed = raw.trim();
   if (!trimmed) return null;
+  if (ADMIN_WORDS.has(trimmed.toLowerCase())) return "adminRedirect";
   if (/[a-zA-Z]/.test(trimmed)) return "username";
   return "phone";
 }
@@ -30,7 +38,6 @@ export default function JoinPage() {
   const [submitting, setSubmitting] = useState(false);
   const [createdPassword, setCreatedPassword] = useState(null);
   const [createdUsername, setCreatedUsername] = useState("");
-  const [passwordVisible, setPasswordVisible] = useState(true);
   const [checkedInMember, setCheckedInMember] = useState(null);
 
   const kind = classifyInput(input);
@@ -52,12 +59,18 @@ export default function JoinPage() {
     return () => clearTimeout(handle);
   }, [kind, input]);
 
+  // Either success screen shows the password for exactly 10s, then the
+  // kiosk auto-returns to a blank Join screen — ready for the next person
+  // without staff having to intervene.
   useEffect(() => {
-    if (!createdPassword) return;
-    setPasswordVisible(true);
-    const timeout = setTimeout(() => setPasswordVisible(false), PASSWORD_VISIBLE_MS);
+    if (!createdPassword && !checkedInMember) return;
+    const timeout = setTimeout(() => {
+      setCreatedPassword(null);
+      setCreatedUsername("");
+      setCheckedInMember(null);
+    }, PASSWORD_VISIBLE_MS);
     return () => clearTimeout(timeout);
-  }, [createdPassword]);
+  }, [createdPassword, checkedInMember]);
 
   function reset() {
     setInput("");
@@ -68,6 +81,13 @@ export default function JoinPage() {
   async function handleSubmit(e) {
     e.preventDefault();
     setError(null);
+
+    if (kind === "adminRedirect") {
+      const prefillUsername = input.trim().toLowerCase();
+      reset();
+      navigate("/login", { state: { prefillUsername } });
+      return;
+    }
 
     if (kind === "phone") {
       const digits = input.replace(/\D/g, "");
@@ -113,14 +133,11 @@ export default function JoinPage() {
           <p>
             Username: <strong>{createdUsername}</strong>
           </p>
-          {passwordVisible ? (
-            <p>
-              Password: <strong>{createdPassword}</strong>
-            </p>
-          ) : (
-            <p className="muted">Password hidden now — hope you wrote it down!</p>
-          )}
+          <p>
+            Password: <strong>{createdPassword}</strong>
+          </p>
         </div>
+        <p className="muted">Returning to Join in 10 seconds…</p>
         <button onClick={() => navigate("/overview")}>Go to Overview</button>
       </div>
     );
@@ -139,6 +156,7 @@ export default function JoinPage() {
             Password: <strong>{checkedInMember.password}</strong>
           </p>
         </div>
+        <p className="muted">Returning to Join in 10 seconds…</p>
         <div className="mode-toggle">
           <button onClick={() => setCheckedInMember(null)}>Check in someone else</button>
           <button onClick={() => navigate("/overview")}>Go to Overview</button>
@@ -169,9 +187,19 @@ export default function JoinPage() {
         {error && <p className="error">{error}</p>}
         <button
           type="submit"
-          disabled={submitting || !selectedLocationId || (kind === "username" && available === false)}
+          disabled={
+            submitting ||
+            (kind !== "adminRedirect" && !selectedLocationId) ||
+            (kind === "username" && available === false)
+          }
         >
-          {submitting ? "Working…" : kind === "phone" ? "Check In" : "Create username"}
+          {submitting
+            ? "Working…"
+            : kind === "adminRedirect"
+              ? "Continue"
+              : kind === "phone"
+                ? "Check In"
+                : "Create username"}
         </button>
       </form>
     </div>

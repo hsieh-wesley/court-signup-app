@@ -38,7 +38,10 @@ function FacilityHeader() {
 
 function Nav() {
   // `token`/`username` here only ever represent an Admin session — regular
-  // players never hold one under the public kiosk model.
+  // players never hold one under the public kiosk model. No admin/staff
+  // nav element is shown at all while logged out — the only way in is
+  // typing "admin"/"staff" on the Join page — so a front-desk or courtside
+  // kiosk left logged out shows nothing but Join/Overview.
   const { token, username, isAdmin, logout } = useAuth();
   return (
     <nav className="nav">
@@ -47,15 +50,15 @@ function Nav() {
       <NavLink to="/overview">Overview</NavLink>
       <LocationSwitcher />
       <span className="spacer" />
-      {token && isAdmin ? (
+      {token && isAdmin && (
         <>
           <span className="muted">Admin: {username}</span>
           <button onClick={logout}>Log out</button>
+          <NavLink to="/admin" className="admin-corner-link">
+            Admin
+          </NavLink>
         </>
-      ) : null}
-      <NavLink to="/admin" className="admin-corner-link">
-        {isAdmin ? "Admin" : "Admin sign in"}
-      </NavLink>
+      )}
     </nav>
   );
 }
