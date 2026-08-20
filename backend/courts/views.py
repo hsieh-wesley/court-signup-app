@@ -8,11 +8,11 @@ from rest_framework.views import APIView
 from . import activity_log, admin_services, services
 from .models import Court, Location, LoginLog, QueueEntry
 from .serializers import (
-    CheckInSerializer,
     CourtBoardSerializer,
     CreateQueueEntrySerializer,
     JoinOpenSlotSerializer,
     LocationSerializer,
+    MemberCheckInSerializer,
     PlayerStatusSerializer,
     QueueEntrySerializer,
     QuickUnsignSerializer,
@@ -89,7 +89,13 @@ class CheckUsernameView(APIView):
 
     def get(self, request):
         username = request.query_params.get("username", "").strip()
-        available = bool(username) and not User.objects.filter(username=username).exists()
+        if not username:
+            return Response({"available": False})
+        try:
+            services.validate_new_username(username)
+            available = True
+        except services.ServiceError:
+            available = False
         return Response({"available": available})
 
 
@@ -273,20 +279,25 @@ class QuickUnsignView(APIView):
         return Response(QueueEntrySerializer(entry).data)
 
 
-class CheckInView(APIView):
-    """Public kiosk endpoint for a returning player to explicitly mark
-    themselves present at a facility today, without creating a session."""
+class MemberCheckInView(APIView):
+    """Public kiosk endpoint: a member checks in by phone number alone, no
+    password. Draws and returns a fresh animal-only password on a match;
+    no session/token is created either way."""
 
     permission_classes = [AllowAny]
 
     def post(self, request):
-        serializer = CheckInSerializer(data=request.data)
+        serializer = MemberCheckInSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         try:
-            user = services.check_in_player(
-                data["username"], data["password"], data["location_id"]
-            )
+            user, plaintext = services.member_check_in(data["phone_number"], data["location_id"])
         except services.ServiceError as exc:
             return Response({"detail": str(exc)}, status=exc.status)
-        return Response({"username": user.username})
+        display_name = getattr(user, "player", None)
+        display_name = display_name.display_name if display_name else user.username
+        return Response({
+            "username": user.username,
+            "display_name": display_name,
+            "password": plaintext,
+        })

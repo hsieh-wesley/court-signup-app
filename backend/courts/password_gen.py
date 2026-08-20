@@ -6,11 +6,24 @@ ANIMALS = [
     "goat", "duck", "swan", "crab", "frog", "mouse", "horse", "camel", "rhino", "llama",
 ]
 
+# A separate, deliberately short, fixed list for member check-in passwords —
+# no digits, no other animals allowed. Collisions between two different
+# members' current passwords are fine: Sign Up/Join/Unsign always require
+# the matching username alongside it.
+MEMBER_ANIMALS = [
+    "dog", "cat", "fish", "horse", "mouse", "goat", "tiger", "rabbit", "lion", "donkey", "wolf",
+]
+
 
 def generate_password() -> str:
     """animal + integer 0-99, e.g. "panda42". Python never zero-pads an int
     in an f-string, so the "no leading zeros" requirement holds structurally."""
     return f"{random.choice(ANIMALS)}{random.randint(0, 99)}"
+
+
+def generate_member_password() -> str:
+    """animal only, no digits — drawn fresh on every member check-in."""
+    return random.choice(MEMBER_ANIMALS)
 
 
 def generate_unique_passwords(n: int) -> list[str]:

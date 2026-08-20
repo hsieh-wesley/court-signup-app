@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useFacility } from "../LocationContext";
 import { api } from "../apiClient";
+import { formatSeconds, useLiveCountdown } from "../timeFormat";
 
 function emptyPlayer() {
   return { username: "", password: "" };
@@ -247,6 +248,7 @@ function QuickUnsignWidget({ onChanged }) {
 
 function CourtCard({ court, onPick }) {
   const active = court.active_entry;
+  const remaining = useLiveCountdown(active?.seconds_remaining ?? null, active?.id);
 
   return (
     <div className="card">
@@ -257,9 +259,7 @@ function CourtCard({ court, onPick }) {
       {active ? (
         <div>
           <p className="muted">
-            {active.seconds_remaining != null
-              ? `${Math.ceil(active.seconds_remaining / 60)} min remaining`
-              : "In progress"}
+            {remaining != null ? `${formatSeconds(remaining)} remaining` : "In progress"}
           </p>
           <ul className="pair-list">
             {active.pairs.map((pair) => (

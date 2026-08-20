@@ -1,14 +1,33 @@
+import re
+
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import Max, Q
 from django.utils import timezone
 
 from . import activity_log
-from .models import Court, CourtActivityLog, Location, Pair, Player, PlayerSession, QueueEntry
+from .membership import active_membership, find_active_membership_by_phone
+from .models import (
+    Court,
+    CourtActivityLog,
+    Location,
+    Membership,
+    Pair,
+    Player,
+    PlayerSession,
+    QueueEntry,
+)
 from .password_gen import generate_password, generate_unique_passwords
-from .services import ServiceError, _end_pair
+from .services import ServiceError, _end_pair, validate_new_username
 
 User = get_user_model()
+
+PHONE_RE = re.compile(r"^\d{10}$")
+
+
+def _validate_phone(phone_number):
+    if not PHONE_RE.match(phone_number or ""):
+        raise ServiceError("Phone number must be exactly 10 digits.")
 
 
 def create_player(display_name, username=None, enable_login=False):
@@ -17,8 +36,8 @@ def create_player(display_name, username=None, enable_login=False):
         raise ServiceError("display_name is required.")
     if enable_login and not username:
         raise ServiceError("username is required when enable_login is true.")
-    if username and User.objects.filter(username=username).exists():
-        raise ServiceError(f"Username '{username}' is already taken.")
+    if username:
+        validate_new_username(username)
 
     with transaction.atomic():
         plaintext = None
@@ -37,8 +56,7 @@ def edit_player(player, display_name=None, username=None):
     if username is not None:
         if player.user is None:
             raise ServiceError("This player has no login access to rename.")
-        if User.objects.exclude(pk=player.user_id).filter(username=username).exists():
-            raise ServiceError(f"Username '{username}' is already taken.")
+        validate_new_username(username, exclude_user_id=player.user_id)
         player.user.username = username
         player.user.save()
     player.save()
@@ -51,10 +69,8 @@ def add_login(player, username):
     had login and it was disabled, rather than creating a duplicate."""
     if player.user is not None:
         user = player.user
-        if username != user.username and User.objects.exclude(pk=user.pk).filter(
-            username=username
-        ).exists():
-            raise ServiceError(f"Username '{username}' is already taken.")
+        if username != user.username:
+            validate_new_username(username, exclude_user_id=user.pk)
         user.username = username
         user.is_active = True
         plaintext = generate_password()
@@ -63,8 +79,7 @@ def add_login(player, username):
         PlayerSession.objects.filter(user=user).delete()
         return plaintext
 
-    if User.objects.filter(username=username).exists():
-        raise ServiceError(f"Username '{username}' is already taken.")
+    validate_new_username(username)
     plaintext = generate_password()
     user = User.objects.create_user(username=username, password=plaintext)
     player.user = user
@@ -122,6 +137,65 @@ def deactivate_player(player, actor=None):
         disable_login(player)
     player.is_active = False
     player.save()
+
+
+def start_membership(username, phone_number, starts_at=None, expires_at=None):
+    """Starts a new Membership period for `username` — reusing their
+    existing Player/User if one already exists (e.g. a non-member who
+    self-registered months ago and is now becoming a member) rather than
+    ever creating a duplicate account to represent the same person.
+    Returns (player, plaintext_or_None) — plaintext only when a brand-new
+    account was created here; an existing account keeps its existing
+    password (their first check-in draws a fresh member-only one)."""
+    _validate_phone(phone_number)
+
+    phone_conflict = find_active_membership_by_phone(phone_number)
+
+    try:
+        user = User.objects.get(username__iexact=username)
+        player = user.player
+        plaintext = None
+    except User.DoesNotExist:
+        validate_new_username(username)
+        plaintext = generate_password()
+        user = User.objects.create_user(username=username, password=plaintext)
+        player = Player.objects.create(display_name=username, user=user)
+
+    if phone_conflict is not None and phone_conflict.player_id != player.id:
+        raise ServiceError("That phone number is already active for another member.")
+    if active_membership(player) is not None:
+        raise ServiceError(f"{username} already has an active membership.")
+
+    with transaction.atomic():
+        membership = Membership.objects.create(
+            player=player,
+            phone_number=phone_number,
+            starts_at=starts_at or timezone.now(),
+            expires_at=expires_at,
+        )
+
+    return player, membership, plaintext
+
+
+def update_membership(membership, phone_number=None, expires_at=None):
+    """In-place edits to a CURRENT (not-yet-lapsed) Membership row. Phone
+    number is just contact info; only the start/expire *boundaries* matter
+    for history, and those stay protected by never mutating an already-
+    lapsed row — renewal always goes through start_membership instead."""
+    now = timezone.now()
+    if membership.expires_at and membership.expires_at <= now:
+        raise ServiceError("This membership period has ended — start a new one instead of editing it.")
+
+    if phone_number is not None:
+        _validate_phone(phone_number)
+        conflict = find_active_membership_by_phone(phone_number)
+        if conflict is not None and conflict.player_id != membership.player_id:
+            raise ServiceError("That phone number is already active for another member.")
+        membership.phone_number = phone_number
+    if expires_at is not None:
+        membership.expires_at = expires_at
+    membership.save()
+    return membership
 
 
 def create_test_players(n=8):

@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.contrib.auth import get_user_model
 from django.contrib.auth.admin import UserAdmin
 
-from .models import Court, CourtActivityLog, Location, LoginLog, Pair, Player, QueueEntry
+from .models import Court, CourtActivityLog, Location, LoginLog, Membership, Pair, Player, QueueEntry
 
 User = get_user_model()
 
@@ -32,6 +32,12 @@ admin.site.register(User, TempUserAdmin)
 class PlayerAdmin(admin.ModelAdmin):
     list_display = ("display_name", "user", "has_login", "is_active", "expires_at")
     list_filter = ("is_active",)
+
+
+@admin.register(Membership)
+class MembershipAdmin(admin.ModelAdmin):
+    list_display = ("player", "phone_number", "starts_at", "expires_at", "created_at")
+    list_filter = ("starts_at",)
 
 
 @admin.register(Location)

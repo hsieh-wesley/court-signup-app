@@ -68,6 +68,16 @@ urlpatterns = [
         name="admin-location-court-count",
     ),
     path(
+        "memberships/",
+        views.AdminMembershipListCreateView.as_view(),
+        name="admin-membership-list-create",
+    ),
+    path(
+        "memberships/<int:pk>/",
+        views.AdminMembershipDetailView.as_view(),
+        name="admin-membership-detail",
+    ),
+    path(
         "history/logins/",
         views.AdminLoginHistoryView.as_view(),
         name="admin-history-logins",

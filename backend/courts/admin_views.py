@@ -14,6 +14,9 @@ from .admin_serializers import (
     AdminLocationCreateSerializer,
     AdminLocationEditSerializer,
     AdminLocationSerializer,
+    AdminMembershipCreateSerializer,
+    AdminMembershipEditSerializer,
+    AdminMembershipSerializer,
     AdminPlayerCreateSerializer,
     AdminPlayerEditSerializer,
     AdminPlayerSerializer,
@@ -70,7 +73,11 @@ def _checkin_map(location_id):
     rows = (
         LoginLog.objects.filter(
             location_id=location_id,
-            context__in=[LoginLog.Context.REGISTRATION, LoginLog.Context.CHECK_IN],
+            context__in=[
+                LoginLog.Context.REGISTRATION,
+                LoginLog.Context.CHECK_IN,
+                LoginLog.Context.MEMBER_CHECK_IN,
+            ],
             created_at__date=timezone.localdate(),
         )
         .values("user_id")
@@ -102,7 +109,11 @@ def _location_counts():
 
     checkins = (
         LoginLog.objects.filter(
-            context__in=[LoginLog.Context.REGISTRATION, LoginLog.Context.CHECK_IN],
+            context__in=[
+                LoginLog.Context.REGISTRATION,
+                LoginLog.Context.CHECK_IN,
+                LoginLog.Context.MEMBER_CHECK_IN,
+            ],
             created_at__date=timezone.localdate(),
             location_id__isnull=False,
         )
@@ -339,6 +350,65 @@ class AdminLocationCourtCountView(APIView):
         return Response(AdminLocationSerializer(location).data)
 
 
+class AdminMembershipListCreateView(APIView):
+    """POST also renews a lapsed member: pass their existing username and
+    admin_services.start_membership reuses that Player/User rather than
+    creating a duplicate account."""
+
+    permission_classes = [IsAdmin]
+
+    def get(self, request):
+        players = (
+            Player.objects.filter(memberships__isnull=False)
+            .distinct()
+            .select_related("user")
+            .order_by("display_name")
+        )
+        return Response(AdminMembershipSerializer(players, many=True).data)
+
+    def post(self, request):
+        serializer = AdminMembershipCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        try:
+            player, _membership, plaintext = admin_services.start_membership(
+                username=data["username"],
+                phone_number=data["phone_number"],
+                expires_at=data.get("expires_at"),
+            )
+        except services.ServiceError as exc:
+            return Response({"detail": str(exc)}, status=exc.status)
+        payload = AdminMembershipSerializer(player).data
+        if plaintext:
+            payload["password"] = plaintext
+        return Response(payload, status=status.HTTP_201_CREATED)
+
+
+class AdminMembershipDetailView(APIView):
+    """PATCH edits the player's CURRENT (not-yet-lapsed) membership row —
+    phone number and/or expiration. 404s if they have no membership at
+    all; rejects editing an already-lapsed row (see admin_services.
+    update_membership) — renew via AdminMembershipListCreateView.post
+    instead, which starts a fresh period."""
+
+    permission_classes = [IsAdmin]
+
+    def patch(self, request, pk):
+        player = _get_player_or_404(pk)
+        if player is None:
+            return Response({"detail": "Player not found."}, status=status.HTTP_404_NOT_FOUND)
+        membership = player.memberships.order_by("-starts_at").first()
+        if membership is None:
+            return Response({"detail": "This player has no membership."}, status=status.HTTP_404_NOT_FOUND)
+        serializer = AdminMembershipEditSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            admin_services.update_membership(membership, **serializer.validated_data)
+        except services.ServiceError as exc:
+            return Response({"detail": str(exc)}, status=exc.status)
+        return Response(AdminMembershipSerializer(player).data)
+
+
 class AdminLoginHistoryView(APIView):
     permission_classes = [IsAdmin]
 
@@ -353,6 +423,9 @@ class AdminLoginHistoryView(APIView):
         context = request.query_params.get("context")
         if context:
             qs = qs.filter(context=context)
+        membership = request.query_params.get("membership")
+        if membership:
+            qs = qs.filter(membership_status=membership)
         date = request.query_params.get("date")
         if date:
             qs = qs.filter(created_at__date=date)
@@ -377,6 +450,18 @@ class AdminCourtActivityHistoryView(APIView):
         username = request.query_params.get("username")
         if username:
             qs = qs.filter(Q(player_1_username=username) | Q(player_2_username=username))
+        membership = request.query_params.get("membership")
+        if membership == "member":
+            qs = qs.filter(
+                Q(player_1_membership_status="member") | Q(player_2_membership_status="member")
+            )
+        elif membership == "non_member":
+            qs = qs.filter(
+                Q(player_1_membership_status="non_member")
+                | Q(player_2_membership_status="non_member")
+            ).exclude(
+                Q(player_1_membership_status="member") | Q(player_2_membership_status="member")
+            )
         date = request.query_params.get("date")
         if date:
             qs = qs.filter(created_at__date=date)

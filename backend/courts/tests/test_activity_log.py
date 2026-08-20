@@ -3,7 +3,7 @@ import datetime
 import pytest
 from django.utils import timezone
 
-from courts import activity_log, admin_services, services
+from courts import activity_log, admin_services, password_gen, services
 from courts.models import CourtActivityLog, LoginLog
 from courts.tests.factories import make_admin_user, make_court, make_user, pair_for
 
@@ -254,7 +254,9 @@ def test_join_does_not_duplicate_an_existing_check_in_today():
     court = make_court()
     alice = make_user("alice")
     make_user("bob")
-    services.check_in_player("alice", "pw12345", court.location)
+    # Simulate a pre-existing same-day presence stamp (e.g. from an earlier
+    # court action) — explicit username/password Check In no longer exists.
+    activity_log.log_player_auth_event(alice, court.location, LoginLog.Context.CHECK_IN)
     assert LoginLog.objects.filter(username="alice").count() == 1
 
     client = APIClient()
@@ -274,20 +276,23 @@ def test_join_does_not_duplicate_an_existing_check_in_today():
     assert LoginLog.objects.filter(username="bob").count() == 1
 
 
-# DoD A: the explicit Check In endpoint stamps presence with no session/token
-def test_check_in_endpoint_stamps_presence_with_no_session():
+# DoD I: the phone-based member Check In endpoint stamps presence with no
+# session/token, and returns a fresh animal-only password.
+def test_member_check_in_endpoint_stamps_presence_with_no_session():
     from rest_framework.test import APIClient
 
     court = make_court()
-    make_user("alice")
+    admin_services.start_membership("alice", "5551230000")
 
     client = APIClient()
     resp = client.post(
         "/api/players/check-in/",
-        {"username": "alice", "password": "pw12345", "location_id": court.location_id},
+        {"phone_number": "5551230000", "location_id": court.location_id},
     )
     assert resp.status_code == 200
     assert "token" not in resp.data
+    assert resp.data["password"] in password_gen.MEMBER_ANIMALS
     log = LoginLog.objects.get(username="alice")
-    assert log.context == LoginLog.Context.CHECK_IN
+    assert log.context == LoginLog.Context.MEMBER_CHECK_IN
+    assert log.membership_status == "member"
     assert log.location_id == court.location_id

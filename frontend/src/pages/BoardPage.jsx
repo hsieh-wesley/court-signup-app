@@ -2,17 +2,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useFacility } from "../LocationContext";
 import { api } from "../apiClient";
-
-function formatSeconds(total) {
-  if (total == null) return null;
-  const m = Math.floor(total / 60)
-    .toString()
-    .padStart(2, "0");
-  const s = Math.floor(total % 60)
-    .toString()
-    .padStart(2, "0");
-  return `${m}:${s}`;
-}
+import { formatSeconds, useLiveCountdown } from "../timeFormat";
 
 function slotLabel(entry, slotIndex) {
   const pair = entry.pairs.find((p) => p.slot === slotIndex);
@@ -23,16 +13,7 @@ function slotLabel(entry, slotIndex) {
 
 function CourtColumn({ court }) {
   const active = court.active_entry;
-  const [remaining, setRemaining] = useState(active?.seconds_remaining ?? null);
-
-  useEffect(() => {
-    setRemaining(active?.seconds_remaining ?? null);
-    if (active?.seconds_remaining == null) return;
-    const tick = setInterval(() => {
-      setRemaining((r) => (r != null && r > 0 ? r - 1 : 0));
-    }, 1000);
-    return () => clearInterval(tick);
-  }, [active?.id, active?.seconds_remaining]);
+  const remaining = useLiveCountdown(active?.seconds_remaining ?? null, active?.id);
 
   return (
     <div className="board-column">

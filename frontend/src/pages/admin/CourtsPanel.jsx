@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../../AuthContext";
 import { adminApi, api } from "../../apiClient";
 import Modal from "../../components/Modal";
+import { formatSeconds, useLiveCountdown } from "../../timeFormat";
 
 function courtStatus(court) {
   if (court.active_entry) return "active";
@@ -125,6 +126,31 @@ const SORTERS = {
     (a.active_entry?.seconds_remaining ?? Infinity) - (b.active_entry?.seconds_remaining ?? Infinity),
 };
 
+function CourtRow({ court, onManage }) {
+  const active = court.active_entry;
+  const remaining = useLiveCountdown(active?.seconds_remaining ?? null, active?.id);
+
+  return (
+    <tr>
+      <td>
+        {court.name}
+        {!court.is_active && <span className="badge">Deactivated</span>}
+      </td>
+      <td>{active ? "On Court" : court.waiting_entries.length ? "Has Queue" : "Empty"}</td>
+      <td>{active ? active.pairs.map((p) => p.players.join("/")).join(" + ") : "—"}</td>
+      <td>{remaining != null ? formatSeconds(remaining) : "—"}</td>
+      <td>
+        {court.waiting_entries.length
+          ? `${court.waiting_entries.length} group${court.waiting_entries.length > 1 ? "s" : ""}`
+          : "—"}
+      </td>
+      <td>
+        <button onClick={onManage}>Manage</button>
+      </td>
+    </tr>
+  );
+}
+
 export default function CourtsPanel({ locationId }) {
   const { token } = useAuth();
   const [courts, setCourts] = useState([]);
@@ -218,31 +244,7 @@ export default function CourtsPanel({ locationId }) {
         </thead>
         <tbody>
           {visible.map((court) => (
-            <tr key={court.id}>
-              <td>
-                {court.name}
-                {!court.is_active && <span className="badge">Deactivated</span>}
-              </td>
-              <td>{court.active_entry ? "On Court" : court.waiting_entries.length ? "Has Queue" : "Empty"}</td>
-              <td>
-                {court.active_entry
-                  ? court.active_entry.pairs.map((p) => p.players.join("/")).join(" + ")
-                  : "—"}
-              </td>
-              <td>
-                {court.active_entry?.seconds_remaining != null
-                  ? `${Math.ceil(court.active_entry.seconds_remaining / 60)} min`
-                  : "—"}
-              </td>
-              <td>
-                {court.waiting_entries.length
-                  ? `${court.waiting_entries.length} group${court.waiting_entries.length > 1 ? "s" : ""}`
-                  : "—"}
-              </td>
-              <td>
-                <button onClick={() => setManagingCourtId(court.id)}>Manage</button>
-              </td>
-            </tr>
+            <CourtRow key={court.id} court={court} onManage={() => setManagingCourtId(court.id)} />
           ))}
         </tbody>
       </table>

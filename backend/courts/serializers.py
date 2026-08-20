@@ -144,10 +144,10 @@ class QuickUnsignSerializer(serializers.Serializer):
     )
 
 
-class CheckInSerializer(serializers.Serializer):
-    """Explicit Check In for a returning player — verifies credentials and
-    stamps today's facility presence, with no session/token created."""
+class MemberCheckInSerializer(serializers.Serializer):
+    """Phone-only check-in for a member — no password. A successful match
+    draws a fresh member-only password (see services.member_check_in);
+    no session/token is created either way."""
 
-    username = serializers.CharField(max_length=150)
-    password = serializers.CharField(max_length=150)
+    phone_number = serializers.CharField(max_length=10, min_length=10)
     location_id = serializers.PrimaryKeyRelatedField(queryset=Location.objects.all())

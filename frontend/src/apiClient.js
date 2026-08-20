@@ -72,11 +72,12 @@ export const api = {
       method: "POST",
       body: { pairs },
     }),
-  // Explicit presence for a returning player — no session/token created.
-  checkIn: (username, password, locationId) =>
+  // Phone-only check-in for a member — no password. A match draws and
+  // returns a fresh animal-only password; no session/token is created.
+  memberCheckIn: (phoneNumber, locationId) =>
     request("/players/check-in/", {
       method: "POST",
-      body: { username, password, location_id: locationId },
+      body: { phone_number: phoneNumber, location_id: locationId },
     }),
 };
 
@@ -148,4 +149,19 @@ export const adminApi = {
     request(`/admin/history/logins/${qs(filters)}`, { token }),
   getCourtActivityHistory: (token, filters) =>
     request(`/admin/history/court-activity/${qs(filters)}`, { token }),
+  listMemberships: (token) => request("/admin/memberships/", { token }),
+  // Also used to renew a lapsed member — pass their existing username and
+  // the backend reuses that account rather than creating a duplicate.
+  startMembership: (token, { username, phoneNumber, expiresAt }) =>
+    request("/admin/memberships/", {
+      method: "POST",
+      token,
+      body: { username, phone_number: phoneNumber, expires_at: expiresAt },
+    }),
+  editMembership: (token, playerId, { phoneNumber, expiresAt }) =>
+    request(`/admin/memberships/${playerId}/`, {
+      method: "PATCH",
+      token,
+      body: { phone_number: phoneNumber, expires_at: expiresAt },
+    }),
 };

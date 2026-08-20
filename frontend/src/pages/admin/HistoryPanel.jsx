@@ -26,6 +26,7 @@ export default function HistoryPanel({ locationId }) {
   const [locationFilter, setLocationFilter] = useState(locationId || "");
   const [usernameFilter, setUsernameFilter] = useState("");
   const [eventTypeFilter, setEventTypeFilter] = useState("");
+  const [membershipFilter, setMembershipFilter] = useState("");
 
   // Follow the global facility selector until the admin picks their own
   // override in this panel (including explicit "All Locations").
@@ -38,6 +39,7 @@ export default function HistoryPanel({ locationId }) {
       location_id: locationFilter || undefined,
       username: usernameFilter || undefined,
       date: date || undefined,
+      membership: membershipFilter || undefined,
     };
     const [loginData, activityData] = await Promise.all([
       adminApi.getLoginHistory(token, filters),
@@ -49,7 +51,7 @@ export default function HistoryPanel({ locationId }) {
 
   useEffect(() => {
     refresh();
-  }, [date, locationFilter, usernameFilter, eventTypeFilter]);
+  }, [date, locationFilter, usernameFilter, eventTypeFilter, membershipFilter]);
 
   return (
     <div>
@@ -84,6 +86,14 @@ export default function HistoryPanel({ locationId }) {
             ))}
           </select>
         </label>
+        <label>
+          Membership
+          <select value={membershipFilter} onChange={(e) => setMembershipFilter(e.target.value)}>
+            <option value="">All</option>
+            <option value="member">Member</option>
+            <option value="non_member">Non-Member</option>
+          </select>
+        </label>
       </div>
 
       <h3>Logins</h3>
@@ -94,6 +104,7 @@ export default function HistoryPanel({ locationId }) {
             <th>Username</th>
             <th>Location</th>
             <th>Event</th>
+            <th>Membership</th>
           </tr>
         </thead>
         <tbody>
@@ -103,6 +114,7 @@ export default function HistoryPanel({ locationId }) {
               <td>{row.username}</td>
               <td>{row.location_name}</td>
               <td>{row.context}</td>
+              <td>{row.membership_status === "member" ? "Member" : "Non-Member"}</td>
             </tr>
           ))}
         </tbody>
@@ -130,7 +142,13 @@ export default function HistoryPanel({ locationId }) {
               </td>
               <td>{row.location_name}</td>
               <td>{row.court_number}</td>
-              <td>{[row.player_1_username, row.player_2_username].filter(Boolean).join(" & ")}</td>
+              <td>
+                {[row.player_1_username, row.player_2_username].filter(Boolean).join(" & ")}
+                {(row.player_1_membership_status === "member" ||
+                  row.player_2_membership_status === "member") && (
+                  <span className="badge">Member</span>
+                )}
+              </td>
               <td>{row.actor_username || "—"}</td>
             </tr>
           ))}

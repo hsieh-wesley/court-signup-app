@@ -1,4 +1,5 @@
 import datetime
+import re
 
 from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model
@@ -7,9 +8,13 @@ from django.db.models import Q
 from django.utils import timezone
 
 from . import activity_log
-from .models import Court, CourtActivityLog, LoginLog, Pair, PlayerSession, QueueEntry
+from .membership import find_active_membership_by_phone
+from .models import Court, CourtActivityLog, LoginLog, Membership, Pair, PlayerSession, QueueEntry
+from .password_gen import generate_member_password
 
 User = get_user_model()
+
+USERNAME_RE = re.compile(r"^[A-Za-z]{1,20}$")
 
 
 class ServiceError(Exception):
@@ -362,7 +367,11 @@ def has_facility_presence_today(user, location):
     return LoginLog.objects.filter(
         user=user,
         location=location,
-        context__in=[LoginLog.Context.REGISTRATION, LoginLog.Context.CHECK_IN],
+        context__in=[
+            LoginLog.Context.REGISTRATION,
+            LoginLog.Context.CHECK_IN,
+            LoginLog.Context.MEMBER_CHECK_IN,
+        ],
         created_at__date=timezone.localdate(),
     ).exists()
 
@@ -394,14 +403,57 @@ def verify_pair_credentials(pairs_credentials, target_location):
     return result
 
 
-def check_in_player(username, password, location):
-    """Explicit Check In for a returning player — verifies credentials and
-    stamps a same-day presence row, same as the implicit stamp inside
-    verify_pair_credentials, for someone who wants to enter the Waiting
-    Room before picking a court. No PlayerSession/token is created."""
-    user = verify_credential(username, password)
-    activity_log.log_player_auth_event(user, location, LoginLog.Context.CHECK_IN)
-    return user
+def validate_new_username(username, exclude_user_id=None):
+    """Shared by self-registration and every admin username-creating path.
+    1-20 letters only. "Protected" names — case-insensitive — are "admin",
+    every current staff username, and every username whose Player
+    currently has an active Membership (not "ever was a member" — a
+    lapsed member's username stays taken via ordinary uniqueness, but
+    stops being specially protected). Uniqueness itself is also
+    case-insensitive, so "Alice" and "alice" can never both exist.
+    `exclude_user_id` excludes that user from BOTH checks — editing an
+    account to (re-)claim a name it already legitimately holds (e.g. a
+    member re-saving their own protected username unchanged) is not a
+    collision with itself."""
+    if not USERNAME_RE.match(username):
+        raise ServiceError("Username must be 1-20 letters, no numbers or symbols.")
+
+    now = timezone.now()
+    active_memberships = (
+        Membership.objects.filter(starts_at__lte=now)
+        .filter(Q(expires_at__isnull=True) | Q(expires_at__gt=now))
+        .exclude(player__user_id=exclude_user_id or 0)
+        .values_list("player__user__username", flat=True)
+    )
+    reserved = {"admin", *User.objects.filter(is_staff=True).exclude(pk=exclude_user_id or 0)
+                .values_list("username", flat=True)}
+    reserved |= {u for u in active_memberships if u}
+    if username.lower() in {r.lower() for r in reserved}:
+        raise ServiceError(f"'{username}' is a protected name and can't be used.")
+
+    qs = User.objects.filter(username__iexact=username)
+    if exclude_user_id:
+        qs = qs.exclude(pk=exclude_user_id)
+    if qs.exists():
+        raise ServiceError(f"Username '{username}' is already taken.")
+
+
+def member_check_in(phone_number, location):
+    """Phone-only check-in for a member: no password. Draws a fresh
+    animal-only password (invalidating whatever they had before), stamps
+    a MEMBER_CHECK_IN LoginLog row, and returns it for one-time display.
+    No PlayerSession/token is created — same stateless-kiosk model as
+    every other public action here."""
+    membership = find_active_membership_by_phone(phone_number)
+    if membership is None or membership.player.user is None:
+        raise ServiceError("No member found with that phone number.")
+    user = membership.player.user
+    _check_not_expired(user)
+    plaintext = generate_member_password()
+    user.set_password(plaintext)
+    user.save()
+    activity_log.log_player_auth_event(user, location, LoginLog.Context.MEMBER_CHECK_IN)
+    return user, plaintext
 
 
 def create_player_session(user, location=None):

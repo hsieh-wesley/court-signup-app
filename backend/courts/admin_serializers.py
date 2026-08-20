@@ -1,6 +1,7 @@
 from django.db.models import Q
 from rest_framework import serializers
 
+from .membership import active_membership
 from .models import Court, CourtActivityLog, Location, LoginLog, Pair, Player, QueueEntry
 
 
@@ -131,7 +132,7 @@ class AdminLocationSerializer(serializers.ModelSerializer):
 class LoginLogSerializer(serializers.ModelSerializer):
     class Meta:
         model = LoginLog
-        fields = ["id", "username", "location_name", "context", "created_at"]
+        fields = ["id", "username", "location_name", "context", "membership_status", "created_at"]
 
 
 class CourtActivityLogSerializer(serializers.ModelSerializer):
@@ -139,8 +140,80 @@ class CourtActivityLogSerializer(serializers.ModelSerializer):
         model = CourtActivityLog
         fields = [
             "id", "event_type", "reason", "location_name", "court_number",
-            "player_1_username", "player_2_username", "actor_username", "created_at",
+            "player_1_username", "player_2_username", "player_1_membership_status",
+            "player_2_membership_status", "actor_username", "created_at",
         ]
+
+
+class AdminMembershipSerializer(serializers.ModelSerializer):
+    """One row per Player who has ever had a Membership — `phone_number`/
+    `member_since`/`expires_at` reflect the current-or-most-recent period;
+    `periods` lists every past period for the Manage modal's history view.
+    `status` is derived fresh every request (never stored) from whether an
+    active Membership row currently covers `now()` — entirely separate
+    from the immutable `membership_status` snapshots on LoginLog/
+    CourtActivityLog, which reflect the past, not now."""
+
+    username = serializers.SerializerMethodField()
+    phone_number = serializers.SerializerMethodField()
+    status = serializers.SerializerMethodField()
+    member_since = serializers.SerializerMethodField()
+    expires_at = serializers.SerializerMethodField()
+    periods = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Player
+        fields = [
+            "id", "display_name", "username", "phone_number", "status",
+            "member_since", "expires_at", "periods",
+        ]
+
+    def _latest(self, player):
+        return player.memberships.order_by("-starts_at").first()
+
+    def get_username(self, player):
+        return player.user.username if player.user else None
+
+    def get_phone_number(self, player):
+        latest = self._latest(player)
+        return latest.phone_number if latest else None
+
+    def get_status(self, player):
+        return "active" if active_membership(player) is not None else "expired"
+
+    def get_member_since(self, player):
+        latest = self._latest(player)
+        return latest.starts_at if latest else None
+
+    def get_expires_at(self, player):
+        latest = self._latest(player)
+        return latest.expires_at if latest else None
+
+    def get_periods(self, player):
+        return [
+            {
+                "id": m.id,
+                "phone_number": m.phone_number,
+                "starts_at": m.starts_at,
+                "expires_at": m.expires_at,
+            }
+            for m in player.memberships.order_by("-starts_at")
+        ]
+
+
+class AdminMembershipCreateSerializer(serializers.Serializer):
+    """Also used to renew a lapsed member: pass their existing username
+    and admin_services.start_membership reuses that account rather than
+    creating a duplicate."""
+
+    username = serializers.CharField(max_length=20)
+    phone_number = serializers.CharField(max_length=10, min_length=10)
+    expires_at = serializers.DateTimeField(required=False, allow_null=True, default=None)
+
+
+class AdminMembershipEditSerializer(serializers.Serializer):
+    phone_number = serializers.CharField(max_length=10, min_length=10, required=False)
+    expires_at = serializers.DateTimeField(required=False, allow_null=True)
 
 
 class AdminPlayerCreateSerializer(serializers.Serializer):

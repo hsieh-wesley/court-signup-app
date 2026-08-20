@@ -46,6 +46,42 @@ class Player(models.Model):
         return self.expires_at is not None and timezone.now() >= self.expires_at
 
 
+class Membership(models.Model):
+    """A dated period during which a Player held member status. Never
+    mutated to represent a *different* period — a lapsed-then-renewed
+    membership gets a NEW row here, so period history stays intact and
+    the same Player/User/username is reused rather than duplicated.
+    'Currently a member' is derived (see services._active_membership),
+    never stored as a flag on Player. At most one row per Player may be
+    "current" at a time — enforced at the service layer, not the DB,
+    since past (lapsed) rows must remain readable forever."""
+
+    player = models.ForeignKey(Player, on_delete=models.CASCADE, related_name="memberships")
+    phone_number = models.CharField(max_length=10)
+    starts_at = models.DateTimeField()
+    expires_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-starts_at"]
+
+    def __str__(self):
+        return f"{self.player.display_name} ({self.starts_at.date()}–{self.expires_at.date() if self.expires_at else '…'})"
+
+
+class MembershipSnapshot(models.TextChoices):
+    """Written once, at the moment a LoginLog/CourtActivityLog row is
+    created, from whatever Membership state was true right then — never
+    re-derived later. This is what makes 'was this player a member at the
+    time of this event' immune to a later edit/expiration of their
+    Membership: the row keeps whatever was baked in, forever. Same
+    snapshot philosophy CourtActivityLog already uses for its other
+    fields (location_name, court_number, player usernames, etc)."""
+
+    MEMBER = "member", "Member"
+    NON_MEMBER = "non_member", "Non-member"
+
+
 class Location(models.Model):
     """A physical venue. Owns its own Courts; court numbers are only unique
     within a Location, not globally."""
@@ -127,6 +163,7 @@ class LoginLog(models.Model):
         STATUS_CHECK = "status_check", "Status check"
         REGISTRATION = "registration", "Registration"
         CHECK_IN = "check_in", "Check-in"
+        MEMBER_CHECK_IN = "member_check_in", "Member check-in"
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="login_logs"
@@ -138,6 +175,9 @@ class LoginLog(models.Model):
     location_name = models.CharField(max_length=100, blank=True)
     context = models.CharField(
         max_length=20, choices=Context.choices, default=Context.ADMIN_LOGIN
+    )
+    membership_status = models.CharField(
+        max_length=20, choices=MembershipSnapshot.choices, default=MembershipSnapshot.NON_MEMBER
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -244,6 +284,16 @@ class CourtActivityLog(models.Model):
     player_1_username = models.CharField(max_length=150, blank=True)
     player_2_username = models.CharField(max_length=150, blank=True)
     actor_username = models.CharField(max_length=150, blank=True)
+    # Two fields, not one — a pair event involves two independent players
+    # who can have different membership statuses at that moment (mirrors
+    # the existing player_1_username/player_2_username split, snapshotted
+    # the same way).
+    player_1_membership_status = models.CharField(
+        max_length=20, choices=MembershipSnapshot.choices, blank=True, default=""
+    )
+    player_2_membership_status = models.CharField(
+        max_length=20, choices=MembershipSnapshot.choices, blank=True, default=""
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
 

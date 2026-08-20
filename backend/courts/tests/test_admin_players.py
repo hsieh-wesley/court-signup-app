@@ -1,7 +1,7 @@
 import pytest
 
-from courts import services
-from courts.models import QueueEntry
+from courts import activity_log, services
+from courts.models import LoginLog, QueueEntry
 from courts.tests.factories import authed_client, make_admin_user, make_court, make_user
 
 pytestmark = pytest.mark.django_db
@@ -30,8 +30,8 @@ def test_status_not_checked_in_by_default():
 # DoD A: explicit check-in -> Waiting Room, with a checked_in_at timestamp
 def test_status_waiting_room_after_check_in():
     court = make_court()
-    make_user("alice")
-    services.check_in_player("alice", "pw12345", court.location)
+    alice = make_user("alice")
+    activity_log.log_player_auth_event(alice, court.location, LoginLog.Context.CHECK_IN)
     admin = make_admin_user()
     client = authed_client(admin)
 
@@ -90,12 +90,12 @@ def test_status_in_queue_after_joining_open_slot():
 def test_status_returns_to_waiting_room_after_unsign():
     court = make_court()
     alice = make_user("alice")
-    make_user("bob")
+    bob = make_user("bob")
     # Presence for the day (in production this is stamped implicitly by
     # verify_pair_credentials on the real Sign Up/Join views — bypassed
     # here since we're calling the service layer directly).
-    services.check_in_player("alice", "pw12345", court.location)
-    services.check_in_player("bob", "pw12345", court.location)
+    activity_log.log_player_auth_event(alice, court.location, LoginLog.Context.CHECK_IN)
+    activity_log.log_player_auth_event(bob, court.location, LoginLog.Context.CHECK_IN)
     services.create_queue_entry(court=court, pairs=[["alice", "bob"]], created_by=alice)
     services.unsign_by_credentials([[
         {"username": "alice", "password": "pw12345"},
@@ -115,9 +115,9 @@ def test_location_counts_match_player_statuses():
     make_user("bob")
     carol = make_user("carol")
     make_user("dave")
-    make_user("erin")
+    erin = make_user("erin")
     services.create_queue_entry(court=court, pairs=[["alice", "bob"]], created_by=alice)
-    services.check_in_player("erin", "pw12345", court.location)
+    activity_log.log_player_auth_event(erin, court.location, LoginLog.Context.CHECK_IN)
     court2 = make_court(location=court.location, number=2)
     services.create_queue_entry(court=court2, pairs=[["carol", "dave"]], created_by=carol)
 

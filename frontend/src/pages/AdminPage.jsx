@@ -3,6 +3,7 @@ import { useFacility } from "../LocationContext";
 import UsersPanel from "./admin/UsersPanel";
 import CourtsPanel from "./admin/CourtsPanel";
 import LocationsPanel from "./admin/LocationsPanel";
+import MembershipPanel from "./admin/MembershipPanel";
 import HistoryPanel from "./admin/HistoryPanel";
 
 export default function AdminPage() {
@@ -37,6 +38,9 @@ export default function AdminPage() {
         <button className={tab === "locations" ? "active" : ""} onClick={() => setTab("locations")}>
           Locations
         </button>
+        <button className={tab === "membership" ? "active" : ""} onClick={() => setTab("membership")}>
+          Membership
+        </button>
         <button className={tab === "history" ? "active" : ""} onClick={() => setTab("history")}>
           History
         </button>
@@ -45,6 +49,7 @@ export default function AdminPage() {
       {tab === "users" && <UsersPanel locationId={selectedLocationId} />}
       {tab === "courts" && <CourtsPanel locationId={selectedLocationId} />}
       {tab === "locations" && <LocationsPanel />}
+      {tab === "membership" && <MembershipPanel />}
       {tab === "history" && <HistoryPanel locationId={selectedLocationId} />}
     </div>
   );
