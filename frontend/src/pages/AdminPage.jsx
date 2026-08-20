@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { KeyRound } from "lucide-react";
 import { useAuth } from "../AuthContext";
-import { useFacility } from "../LocationContext";
+import { ALL_LOCATIONS, useFacility } from "../LocationContext";
 import { adminApi } from "../apiClient";
 import UsersPanel from "./admin/UsersPanel";
 import CourtsPanel from "./admin/CourtsPanel";
@@ -65,18 +65,29 @@ export default function AdminPage() {
   const [tab, setTab] = useState("users");
   const { isSuperuser } = useAuth();
   const { locations, selectedLocationId, setSelectedLocationId } = useFacility();
+  // Child panels only ever understand "a real location" or "no location
+  // filter" (undefined) — none of them know about the "All Locations"
+  // sentinel, so translate it here once rather than in every panel.
+  const panelLocationId = selectedLocationId === ALL_LOCATIONS ? undefined : selectedLocationId;
 
   return (
     <div className="page">
       <div className="court-card-header">
         <h1 style={{ margin: 0 }}>Admin</h1>
         {locations.length > 0 && (
+          // Also controls which facility Overview/Join show on this
+          // browser/kiosk — see LocationContext.ALL_LOCATIONS. Customers
+          // on-site should only see/sign up for courts they can actually
+          // walk to, so leave this on a specific facility for a real
+          // front-desk kiosk; "All Locations" is for admin's own general
+          // overview, not the normal per-site default.
           <select
             className="location-switcher"
-            value={selectedLocationId || ""}
+            value={selectedLocationId}
             onChange={(e) => setSelectedLocationId(e.target.value)}
             aria-label="Facility"
           >
+            <option value={ALL_LOCATIONS}>All Locations</option>
             {locations.map((loc) => (
               <option key={loc.id} value={loc.id}>
                 {loc.name}
@@ -100,11 +111,11 @@ export default function AdminPage() {
         ))}
       </div>
 
-      {tab === "users" && <UsersPanel locationId={selectedLocationId} />}
-      {tab === "courts" && <CourtsPanel locationId={selectedLocationId} />}
+      {tab === "users" && <UsersPanel locationId={panelLocationId} />}
+      {tab === "courts" && <CourtsPanel locationId={panelLocationId} />}
       {tab === "locations" && <LocationsPanel />}
       {tab === "membership" && <MembershipPanel />}
-      {tab === "history" && <HistoryPanel locationId={selectedLocationId} />}
+      {tab === "history" && <HistoryPanel locationId={panelLocationId} />}
     </div>
   );
 }

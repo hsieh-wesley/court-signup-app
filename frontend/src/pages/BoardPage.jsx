@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { useFacility } from "../LocationContext";
+import { ALL_LOCATIONS, useFacility } from "../LocationContext";
 import { api } from "../apiClient";
 import { formatSeconds, useLiveCountdown } from "../timeFormat";
 import { courtStatus, COURT_STATUS_LABEL } from "../courtStatus";
@@ -55,7 +55,12 @@ export default function BoardPage() {
   const [searchParams] = useSearchParams();
   const urlLocationId = searchParams.get("location_id");
   const { selectedLocationId, selectedLocation, locations } = useFacility();
-  const locationId = urlLocationId || selectedLocationId;
+  // "All Locations" (the shared context's own default) isn't a valid
+  // single value for a one-screen board — treat it as "no location
+  // selected" so getCourts() falls through to its own unfiltered-combined
+  // behavior instead of sending a literal "all" as a location_id.
+  const rawLocationId = urlLocationId || selectedLocationId;
+  const locationId = rawLocationId === ALL_LOCATIONS ? undefined : rawLocationId;
   const [courts, setCourts] = useState([]);
 
   useEffect(() => {

@@ -3,10 +3,16 @@ import { api } from "./apiClient";
 
 const LocationCtx = createContext(null);
 
+// A real facility never has this as its id (Location ids from the DB are
+// numeric), so it's a safe sentinel for "every active facility combined"
+// — used by Overview when admin hasn't (or deliberately hasn't) pinned a
+// kiosk to one specific site.
+export const ALL_LOCATIONS = "all";
+
 export function LocationProvider({ children }) {
   const [locations, setLocations] = useState([]);
   const [selectedLocationId, setSelectedLocationIdState] = useState(
-    () => localStorage.getItem("locationId") || null
+    () => localStorage.getItem("locationId") || ALL_LOCATIONS
   );
   const [loading, setLoading] = useState(true);
 
@@ -15,8 +21,12 @@ export function LocationProvider({ children }) {
       setLocations(locs);
       setLoading(false);
       setSelectedLocationIdState((current) => {
+        if (current === ALL_LOCATIONS) return current;
         if (current && locs.some((l) => String(l.id) === String(current))) return current;
-        return locs.length ? String(locs[0].id) : null;
+        // Whatever was previously selected no longer exists/is active
+        // (e.g. the facility got archived) — fall back to "every
+        // location" rather than silently guessing a different one.
+        return ALL_LOCATIONS;
       });
     });
   }, []);
@@ -26,10 +36,9 @@ export function LocationProvider({ children }) {
   }, [refreshLocations]);
 
   const setSelectedLocationId = useCallback((id) => {
-    const value = id ? String(id) : null;
+    const value = id ? String(id) : ALL_LOCATIONS;
     setSelectedLocationIdState(value);
-    if (value) localStorage.setItem("locationId", value);
-    else localStorage.removeItem("locationId");
+    localStorage.setItem("locationId", value);
   }, []);
 
   const selectedLocation =

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Eye, EyeOff, XCircle } from "lucide-react";
 import { useAuth } from "../AuthContext";
-import { useFacility } from "../LocationContext";
+import { ALL_LOCATIONS, useFacility } from "../LocationContext";
 
 // Admin sign-in only — reached only by typing "admin"/"staff" on the Join
 // page (no nav link is shown while logged out). Regular players never use
@@ -25,7 +25,10 @@ export default function LoginPage() {
     setError(null);
     setSubmitting(true);
     try {
-      await login(username, password, selectedLocationId);
+      // "All Locations" isn't a real facility to log a login-location
+      // against — the backend only understands a real id or none at all.
+      const locationId = selectedLocationId === ALL_LOCATIONS ? undefined : selectedLocationId;
+      await login(username, password, locationId);
       navigate("/admin");
     } catch (err) {
       setError(err.message);

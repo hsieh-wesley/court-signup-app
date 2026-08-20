@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { CheckCircle2, XCircle } from "lucide-react";
-import { useFacility } from "../LocationContext";
+import { ALL_LOCATIONS, useFacility } from "../LocationContext";
 import { api } from "../apiClient";
 
 const PASSWORD_VISIBLE_MS = 10000;
@@ -63,6 +63,7 @@ function StatusLine({ kind, checking, available, error }) {
 // in as that player.
 export default function JoinPage() {
   const { selectedLocationId, selectedLocation } = useFacility();
+  const noFacilitySelected = selectedLocationId === ALL_LOCATIONS;
   const navigate = useNavigate();
   const [input, setInput] = useState("");
   const [checking, setChecking] = useState(false);
@@ -223,11 +224,17 @@ export default function JoinPage() {
           {selectedLocation.name}
         </p>
       )}
-      <p className="muted" style={{ textAlign: "center" }}>
-        Members can check in with their phone number.
-        <br />
-        Guests can create a username to get started.
-      </p>
+      {noFacilitySelected ? (
+        <p className="error" style={{ textAlign: "center" }}>
+          This kiosk isn't set to a specific facility yet — ask staff to pick one in Admin.
+        </p>
+      ) : (
+        <p className="muted" style={{ textAlign: "center" }}>
+          Members can check in with their phone number.
+          <br />
+          Guests can create a username to get started.
+        </p>
+      )}
       <form onSubmit={handleSubmit} className="form">
         <label>
           Phone number or desired username
@@ -250,7 +257,7 @@ export default function JoinPage() {
           className="btn btn-primary btn-lg"
           disabled={
             submitting ||
-            (kind !== "adminRedirect" && !selectedLocationId) ||
+            (kind !== "adminRedirect" && noFacilitySelected) ||
             (kind === "username" && available === false)
           }
         >

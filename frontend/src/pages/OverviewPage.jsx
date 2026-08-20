@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { UserMinus } from "lucide-react";
+import { ALL_LOCATIONS, useFacility } from "../LocationContext";
 import { api } from "../apiClient";
 import { formatSeconds, useLiveCountdown } from "../timeFormat";
 import { courtStatus, COURT_STATUS_BADGE, COURT_STATUS_LABEL } from "../courtStatus";
@@ -293,26 +294,31 @@ function CourtCard({ court, onPick }) {
   );
 }
 
-// No per-location picker here by design — Overview always shows every
-// active facility's courts combined, grouped by location only when more
-// than one is actually in play (a single-facility deployment renders
-// exactly as before, with no group heading at all).
+// No dropdown on this page itself — which facility it shows is set by
+// admin from the Admin console (LocationSwitcher there), not picked by
+// whoever's standing at the kiosk. Customers on-site should only ever
+// see (and sign up for) courts at their actual physical location, so a
+// specific selection shows just that facility; "All Locations" (admin's
+// choice, not the default assumption for a real kiosk) shows every
+// active facility combined, grouped by location heading.
 export default function OverviewPage() {
+  const { selectedLocationId } = useFacility();
   const [courts, setCourts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalTarget, setModalTarget] = useState(null);
 
   async function refresh() {
-    const data = await api.getCourts();
+    const data = await api.getCourts(selectedLocationId === ALL_LOCATIONS ? undefined : selectedLocationId);
     setCourts(data);
     setLoading(false);
   }
 
   useEffect(() => {
+    setLoading(true);
     refresh();
     const interval = setInterval(refresh, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [selectedLocationId]);
 
   const groups = useMemo(() => {
     const byLocation = new Map();

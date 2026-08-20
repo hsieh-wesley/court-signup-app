@@ -224,6 +224,10 @@ export default function CourtsPanel({ locationId }) {
 
   const managingCourt = courts.find((c) => c.id === managingCourtId);
 
+  if (!locationId) {
+    return <p className="empty-state">Select a specific facility above to manage its courts.</p>;
+  }
+
   return (
     <div>
       {error && <p className="error">{error}</p>}

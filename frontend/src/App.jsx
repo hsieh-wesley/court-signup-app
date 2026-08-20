@@ -1,7 +1,7 @@
-import { Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, NavLink, Route, Routes } from "react-router-dom";
 import { LogOut, ShieldCheck } from "lucide-react";
 import { AuthProvider, useAuth } from "./AuthContext";
-import { LocationProvider, useFacility } from "./LocationContext";
+import { LocationProvider } from "./LocationContext";
 import LoginPage from "./pages/LoginPage";
 import JoinPage from "./pages/JoinPage";
 import OverviewPage from "./pages/OverviewPage";
@@ -14,39 +14,16 @@ function RequireAdmin({ children }) {
   return children;
 }
 
-function LocationSwitcher() {
-  const { locations, selectedLocationId, setSelectedLocationId } = useFacility();
-  if (!locations.length) return null;
-  return (
-    <select
-      className="location-switcher"
-      value={selectedLocationId || ""}
-      onChange={(e) => setSelectedLocationId(e.target.value)}
-      aria-label="Facility"
-    >
-      {locations.map((loc) => (
-        <option key={loc.id} value={loc.id}>
-          {loc.name}
-        </option>
-      ))}
-    </select>
-  );
-}
-
 function Nav() {
   // `token`/`username` here only ever represent an Admin session — regular
   // players never hold one under the public kiosk model. No admin/staff
   // nav element is shown at all while logged out — the only way in is
   // typing "admin"/"staff" on the Join page — so a front-desk or courtside
   // kiosk left logged out shows nothing but the CourtFlow brand and
-  // Join/Overview. LocationSwitcher only ever appears on the Admin
-  // console, never on Join/Overview: Overview always shows every active
-  // facility combined (no single-location concept to switch), and Join's
-  // register/check-in still targets whatever's currently selected, just
-  // without a live picker cluttering the public-facing screens.
+  // Join/Overview. The facility switcher lives only inside the Admin
+  // console itself (AdminPage), not here — Join/Overview never show a
+  // live picker to whoever's standing at the kiosk.
   const { token, username, isAdmin, logout } = useAuth();
-  const { pathname } = useLocation();
-  const showLocationSwitcher = pathname.startsWith("/admin");
   return (
     <nav className="nav">
       <NavLink to="/overview" className="nav-brand">
@@ -60,7 +37,6 @@ function Nav() {
       <span className="spacer" />
       {token && isAdmin && (
         <div className="nav-account">
-          {showLocationSwitcher && <LocationSwitcher />}
           <span className="nav-account-badge">
             <ShieldCheck size={14} />
             {username}
