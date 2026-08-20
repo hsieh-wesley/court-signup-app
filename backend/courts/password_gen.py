@@ -13,6 +13,7 @@ ANIMALS = [
 # the matching username alongside it.
 MEMBER_ANIMALS = [
     "dog", "cat", "fish", "horse", "mouse", "goat", "tiger", "rabbit", "lion", "donkey", "wolf",
+    "bear",
 ]
 
 
