@@ -1,20 +1,18 @@
 import random
 import secrets
 
+# The one approved animal list — used for both the general animal+digits
+# scheme and the member (digits-free) scheme. No other animals allowed.
 ANIMALS = [
-    "dog", "cat", "fox", "owl", "bear", "wolf", "lion", "tiger", "panda", "eagle",
-    "shark", "whale", "zebra", "koala", "otter", "moose", "raven", "hawk", "deer", "seal",
-    "goat", "duck", "swan", "crab", "frog", "mouse", "horse", "camel", "rhino", "llama",
+    "dog", "cat", "horse", "mouse", "goat", "tiger", "rabbit", "lion", "wolf", "bear",
+    "deer", "frog", "owl", "fox", "donkey",
 ]
 
-# A separate, deliberately short, fixed list for member check-in passwords —
-# no digits, no other animals allowed. Collisions between two different
+# Same list, kept as its own name since member passwords are drawn without
+# digits (see generate_member_password) — collisions between two different
 # members' current passwords are fine: Sign Up/Join/Unsign always require
 # the matching username alongside it.
-MEMBER_ANIMALS = [
-    "dog", "cat", "fish", "horse", "mouse", "goat", "tiger", "rabbit", "lion", "donkey", "wolf",
-    "bear",
-]
+MEMBER_ANIMALS = ANIMALS
 
 
 def generate_password() -> str:
