@@ -250,6 +250,7 @@ export default function UsersPanel({ locationId }) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [sortBy, setSortBy] = useState("name");
+  const [showArchived, setShowArchived] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [testToolsOpen, setTestToolsOpen] = useState(false);
 
@@ -268,6 +269,7 @@ export default function UsersPanel({ locationId }) {
     const term = search.trim().toLowerCase();
     return players
       .filter((p) => {
+        if (!showArchived && !p.is_active) return false;
         if (statusFilter !== "all" && p.status !== statusFilter) return false;
         if (!term) return true;
         return (
@@ -276,7 +278,7 @@ export default function UsersPanel({ locationId }) {
         );
       })
       .sort(SORTERS[sortBy]);
-  }, [players, search, statusFilter, sortBy]);
+  }, [players, search, statusFilter, sortBy, showArchived]);
 
   async function handleCreate({ displayName, username, enableLogin }) {
     const payload = await adminApi.createPlayer(token, { displayName, username, enableLogin });
@@ -356,6 +358,14 @@ export default function UsersPanel({ locationId }) {
             <option value="checkin">Check-In Time</option>
             <option value="created">Account Created</option>
           </select>
+        </label>
+        <label style={{ flexDirection: "row", alignItems: "center", gap: "var(--space-2)" }}>
+          <input
+            type="checkbox"
+            checked={showArchived}
+            onChange={(e) => setShowArchived(e.target.checked)}
+          />
+          Show archived
         </label>
         <span className="spacer" />
         <button className="btn btn-primary" onClick={() => setAddOpen(true)}>

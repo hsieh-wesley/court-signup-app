@@ -38,10 +38,12 @@ function Nav() {
   // players never hold one under the public kiosk model. No admin/staff
   // nav element is shown at all while logged out — the only way in is
   // typing "admin"/"staff" on the Join page — so a front-desk or courtside
-  // kiosk left logged out shows nothing but the CourtFlow brand, Join,
-  // Overview, and the facility selector. The facility name lives only
-  // here, never as a page-dominating title — CourtFlow is the product's
-  // identity, the facility is just the current context.
+  // kiosk left logged out shows nothing but the CourtFlow brand and
+  // Join/Overview. Each physical kiosk is bound to one facility in
+  // practice: an admin/staff signs in once to pick it (LocationSwitcher,
+  // below, only renders for them), and the choice persists in that
+  // browser (LocationContext -> localStorage) after they log back out —
+  // the public never gets a live control to switch facilities themselves.
   const { token, username, isAdmin, logout } = useAuth();
   return (
     <nav className="nav">
@@ -53,10 +55,10 @@ function Nav() {
         <NavLink to="/join">Join</NavLink>
         <NavLink to="/overview">Overview</NavLink>
       </div>
-      <LocationSwitcher />
       <span className="spacer" />
       {token && isAdmin && (
         <div className="nav-account">
+          <LocationSwitcher />
           <span className="nav-account-badge">
             <ShieldCheck size={14} />
             {username}
