@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 import { useAuth } from "../../AuthContext";
+import { useFacility } from "../../LocationContext";
 import { adminApi } from "../../apiClient";
 import Modal from "../../components/Modal";
 import Badge from "../../components/Badge";
@@ -119,6 +120,7 @@ function LocationManageModal({ location, onClose, onAction }) {
 
 export default function LocationsPanel() {
   const { token, isSuperuser } = useAuth();
+  const { refreshLocations } = useFacility();
   const [locations, setLocations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -140,7 +142,7 @@ export default function LocationsPanel() {
   async function handleCreate(data) {
     await adminApi.createLocation(token, data);
     setAddOpen(false);
-    await refresh();
+    await Promise.all([refresh(), refreshLocations()]);
   }
 
   async function handleAction(action, location, arg) {
@@ -160,7 +162,10 @@ export default function LocationsPanel() {
       } else if (action === "activate") {
         await adminApi.editLocation(token, location.id, { isActive: true });
       }
-      await refresh();
+      // The global facility selector (and any kiosk showing it) reads from
+      // its own fetch — refresh it too so a rename/activation shows up
+      // there immediately instead of only in this admin table.
+      await Promise.all([refresh(), refreshLocations()]);
     } catch (err) {
       setError(err.message);
       throw err;

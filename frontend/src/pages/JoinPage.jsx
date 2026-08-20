@@ -203,6 +203,10 @@ export default function JoinPage() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="(555) 010-0001 or a username"
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck="false"
             required
           />
         </label>

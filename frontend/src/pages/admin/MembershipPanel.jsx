@@ -11,13 +11,25 @@ function formatPhone(digits) {
   return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6, 10)}`.trim();
 }
 
-// Formats-as-you-type: strips non-digits, caps at 10, renders (XXX) XXX-XXXX.
+// The editable input's own value is always exactly the raw digits the
+// admin typed — never reformatted with inserted parens/spaces/dashes.
+// Reformatting the live value on every keystroke (the previous approach)
+// fights the browser's own cursor tracking: deleting from the middle, or
+// anywhere but the very end, becomes unreliable once the displayed text
+// no longer matches 1:1 with what was actually typed/deleted. A separate,
+// non-editable preview below shows the pretty (XXX) XXX-XXXX form instead.
 function phoneInputProps(digits, setDigits) {
   return {
-    value: formatPhone(digits).replace(/\s+$/, ""),
+    value: digits,
     onChange: (e) => setDigits(e.target.value.replace(/\D/g, "").slice(0, 10)),
-    placeholder: "(555) 010-0001",
+    placeholder: "5550100001",
+    inputMode: "numeric",
   };
+}
+
+function PhonePreview({ digits }) {
+  if (!digits) return null;
+  return <p className="muted" style={{ marginTop: "calc(-1 * var(--space-2))" }}>{formatPhone(digits)}</p>;
 }
 
 function dateInputValue(iso) {
@@ -61,6 +73,7 @@ function AddMemberForm({ onCreate }) {
         Phone number
         <input {...phoneInputProps(phone, setPhone)} required />
       </label>
+      <PhonePreview digits={phone} />
       <label>
         Expiration (optional)
         <input type="date" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} />
@@ -119,6 +132,7 @@ function ManageMembershipModal({ member, onClose, onEdit, onRenew, history }) {
             Phone number
             <input {...phoneInputProps(phone, setPhone)} required />
           </label>
+          <PhonePreview digits={phone} />
           <label>
             Expiration (blank = none)
             <input type="date" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} />
@@ -133,6 +147,7 @@ function ManageMembershipModal({ member, onClose, onEdit, onRenew, history }) {
             Renew with phone number
             <input {...phoneInputProps(renewPhone, setRenewPhone)} required />
           </label>
+          <PhonePreview digits={renewPhone} />
           <button type="submit" className="btn btn-primary btn-sm" disabled={renewPhone.length !== 10}>
             Renew membership
           </button>

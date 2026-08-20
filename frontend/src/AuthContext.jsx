@@ -1,4 +1,4 @@
-import { createContext, useContext, useState } from "react";
+import { createContext, useCallback, useContext, useMemo, useState } from "react";
 import { api } from "./apiClient";
 
 const AuthContext = createContext(null);
@@ -16,7 +16,7 @@ export function AuthProvider({ children }) {
     () => localStorage.getItem("isSuperuser") === "true"
   );
 
-  async function login(user, password, locationId) {
+  const login = useCallback(async (user, password, locationId) => {
     const data = await api.login(user, password, locationId);
     setToken(data.token);
     setUsername(data.username);
@@ -27,11 +27,13 @@ export function AuthProvider({ children }) {
     localStorage.setItem("isAdmin", String(data.is_staff));
     localStorage.setItem("isSuperuser", String(data.is_superuser));
     return data;
-  }
+  }, []);
 
-  function logout() {
-    if (token) api.logout(token).catch(() => {});
-    setToken(null);
+  const logout = useCallback(() => {
+    setToken((current) => {
+      if (current) api.logout(current).catch(() => {});
+      return null;
+    });
     setUsername(null);
     setIsAdmin(false);
     setIsSuperuser(false);
@@ -39,13 +41,17 @@ export function AuthProvider({ children }) {
     localStorage.removeItem("username");
     localStorage.removeItem("isAdmin");
     localStorage.removeItem("isSuperuser");
-  }
+  }, []);
 
-  return (
-    <AuthContext.Provider value={{ token, username, isAdmin, isSuperuser, login, logout }}>
-      {children}
-    </AuthContext.Provider>
+  // Memoized so consumers (Nav, RequireAdmin, every admin panel) only
+  // re-render when the auth state itself actually changes, not on every
+  // render of whatever else happens to be mounted in the tree.
+  const value = useMemo(
+    () => ({ token, username, isAdmin, isSuperuser, login, logout }),
+    [token, username, isAdmin, isSuperuser, login, logout]
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {
