@@ -5,8 +5,8 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from courts import activity_log, admin_services, services
-from courts.models import CourtActivityLog, LoginLog
-from courts.tests.factories import authed_client, make_admin_user, make_court, make_user
+from courts.models import CourtActivityLog, LoginLog, Player
+from courts.tests.factories import authed_client, make_admin_user, make_court, make_location, make_user
 
 pytestmark = pytest.mark.django_db
 
@@ -329,3 +329,139 @@ def test_admin_memberships_endpoint_exposes_password_to_staff_and_admin():
         assert resp.status_code == 200
         row = next(r for r in resp.data if r["username"] == "kate")
         assert row["password"] == player.current_password_plaintext
+
+
+# Membership location scoping: a period can be tied to one specific
+# facility or "All Locations" (location=None).
+def test_start_membership_defaults_to_all_locations():
+    _player, membership, _plaintext = admin_services.start_membership("kate", "5551230099")
+    assert membership.location_id is None
+
+
+def test_start_membership_with_explicit_location():
+    loc = make_location("Facility A")
+    _player, membership, _plaintext = admin_services.start_membership(
+        "kate", "5551230099", location=loc
+    )
+    assert membership.location_id == loc.id
+
+
+def test_member_check_in_succeeds_at_the_scoped_location():
+    loc = make_location("Facility A")
+    admin_services.start_membership("kate", "5551230099", location=loc)
+    user, _plaintext = services.member_check_in("5551230099", loc)
+    assert user.username == "kate"
+
+
+def test_member_check_in_rejects_a_different_location_than_scoped():
+    loc_a = make_location("Facility A")
+    loc_b = make_location("Facility B")
+    admin_services.start_membership("kate", "5551230099", location=loc_a)
+    with pytest.raises(services.ServiceError, match="only valid at Facility A"):
+        services.member_check_in("5551230099", loc_b)
+
+
+def test_member_check_in_all_locations_membership_works_anywhere():
+    loc_a = make_location("Facility A")
+    loc_b = make_location("Facility B")
+    admin_services.start_membership("kate", "5551230099")  # All Locations
+    services.member_check_in("5551230099", loc_a)  # does not raise
+    services.member_check_in("5551230099", loc_b)  # does not raise
+
+
+def test_update_membership_can_change_location():
+    loc_a = make_location("Facility A")
+    loc_b = make_location("Facility B")
+    _player, membership, _plaintext = admin_services.start_membership(
+        "kate", "5551230099", location=loc_a
+    )
+    admin_services.update_membership(membership, location=loc_b)
+    membership.refresh_from_db()
+    assert membership.location_id == loc_b.id
+
+
+def test_update_membership_omitting_location_leaves_it_unchanged():
+    loc = make_location("Facility A")
+    _player, membership, _plaintext = admin_services.start_membership(
+        "kate", "5551230099", location=loc
+    )
+    admin_services.update_membership(membership, phone_number="5559998888")
+    membership.refresh_from_db()
+    assert membership.location_id == loc.id  # untouched by the phone-only edit
+
+
+def test_update_membership_can_clear_location_to_all():
+    loc = make_location("Facility A")
+    _player, membership, _plaintext = admin_services.start_membership(
+        "kate", "5551230099", location=loc
+    )
+    admin_services.update_membership(membership, location=None)
+    membership.refresh_from_db()
+    assert membership.location_id is None
+
+
+# History snapshot: a membership scoped to one facility only counts as
+# "member" in activity logged AT that facility.
+def test_membership_status_snapshot_is_location_scoped():
+    loc_a = make_location("Facility A")
+    loc_b = make_location("Facility B")
+    admin_services.start_membership("kate", "5551230099", location=loc_a)
+    kate = Player.objects.get(user__username="kate").user
+
+    activity_log.log_player_auth_event(kate, loc_a, LoginLog.Context.CHECK_IN)
+    activity_log.log_player_auth_event(kate, loc_b, LoginLog.Context.CHECK_IN)
+
+    log_a = LoginLog.objects.filter(username="kate", location=loc_a).first()
+    log_b = LoginLog.objects.filter(username="kate", location=loc_b).first()
+    assert log_a.membership_status == "member"
+    assert log_b.membership_status == "non_member"
+
+
+def test_membership_status_snapshot_all_locations_counts_everywhere():
+    loc_a = make_location("Facility A")
+    loc_b = make_location("Facility B")
+    admin_services.start_membership("kate", "5551230099")  # All Locations
+    kate = Player.objects.get(user__username="kate").user
+
+    activity_log.log_player_auth_event(kate, loc_a, LoginLog.Context.CHECK_IN)
+    activity_log.log_player_auth_event(kate, loc_b, LoginLog.Context.CHECK_IN)
+
+    assert LoginLog.objects.get(username="kate", location=loc_a).membership_status == "member"
+    assert LoginLog.objects.get(username="kate", location=loc_b).membership_status == "member"
+
+
+def test_admin_membership_create_endpoint_accepts_location_id():
+    loc = make_location("Facility A")
+    admin = make_admin_user()
+    client = authed_client(admin)
+    resp = client.post(
+        "/api/admin/memberships/",
+        {"username": "kate", "phone_number": "5551230099", "location_id": loc.id},
+    )
+    assert resp.status_code == 201
+    assert resp.data["location_id"] == loc.id
+    assert resp.data["location_name"] == "Facility A"
+
+
+def test_admin_membership_create_endpoint_defaults_location_name_all_locations():
+    admin = make_admin_user()
+    client = authed_client(admin)
+    resp = client.post(
+        "/api/admin/memberships/", {"username": "kate", "phone_number": "5551230099"}
+    )
+    assert resp.status_code == 201
+    assert resp.data["location_id"] is None
+    assert resp.data["location_name"] == "All Locations"
+
+
+def test_admin_membership_patch_updates_location():
+    loc = make_location("Facility A")
+    admin_services.start_membership("kate", "5551230099")
+    player = Player.objects.get(user__username="kate")
+    admin = make_admin_user()
+    client = authed_client(admin)
+
+    resp = client.patch(f"/api/admin/memberships/{player.id}/", {"location_id": loc.id})
+    assert resp.status_code == 200
+    assert resp.data["location_id"] == loc.id
+    assert resp.data["location_name"] == "Facility A"

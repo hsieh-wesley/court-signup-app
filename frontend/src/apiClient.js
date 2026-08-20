@@ -154,17 +154,26 @@ export const adminApi = {
   listMemberships: (token) => request("/admin/memberships/", { token }),
   // Also used to renew a lapsed member — pass their existing username and
   // the backend reuses that account rather than creating a duplicate.
-  startMembership: (token, { username, phoneNumber, expiresAt }) =>
+  startMembership: (token, { username, phoneNumber, expiresAt, locationId }) =>
     request("/admin/memberships/", {
       method: "POST",
       token,
-      body: { username, phone_number: phoneNumber, expires_at: expiresAt },
+      body: {
+        username,
+        phone_number: phoneNumber,
+        expires_at: expiresAt,
+        location_id: locationId ?? null,
+      },
     }),
-  editMembership: (token, playerId, { phoneNumber, expiresAt }) =>
+  // locationId omitted (undefined) leaves the existing scope untouched;
+  // locationId: null explicitly sets it to "All Locations" — undefined
+  // keys drop out of the JSON body entirely, null does not, so the two
+  // are distinguishable on the backend.
+  editMembership: (token, playerId, { phoneNumber, expiresAt, locationId }) =>
     request(`/admin/memberships/${playerId}/`, {
       method: "PATCH",
       token,
-      body: { phone_number: phoneNumber, expires_at: expiresAt },
+      body: { phone_number: phoneNumber, expires_at: expiresAt, location_id: locationId },
     }),
   // Admin/superuser-only — staff cannot call this on itself.
   resetStaffPassword: (token) =>

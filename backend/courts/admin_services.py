@@ -147,14 +147,18 @@ def deactivate_player(player, actor=None):
     player.save()
 
 
-def start_membership(username, phone_number, starts_at=None, expires_at=None):
+def start_membership(username, phone_number, starts_at=None, expires_at=None, location=None):
     """Starts a new Membership period for `username` — reusing their
     existing Player/User if one already exists (e.g. a non-member who
     self-registered months ago and is now becoming a member) rather than
     ever creating a duplicate account to represent the same person.
-    Returns (player, plaintext_or_None) — plaintext only when a brand-new
-    account was created here; an existing account keeps its existing
-    password (their first check-in draws a fresh member-only one)."""
+    `location=None` means "All Locations" (valid everywhere) — the same
+    phone number is never allowed to be active for two different members
+    regardless of location scope, since it's a real-world identifier, not
+    a per-facility one. Returns (player, plaintext_or_None) — plaintext
+    only when a brand-new account was created here; an existing account
+    keeps its existing password (their first check-in draws a fresh
+    member-only one)."""
     _validate_phone(phone_number)
 
     phone_conflict = find_active_membership_by_phone(phone_number)
@@ -180,6 +184,7 @@ def start_membership(username, phone_number, starts_at=None, expires_at=None):
         membership = Membership.objects.create(
             player=player,
             phone_number=phone_number,
+            location=location,
             starts_at=starts_at or timezone.now(),
             expires_at=expires_at,
         )
@@ -187,11 +192,17 @@ def start_membership(username, phone_number, starts_at=None, expires_at=None):
     return player, membership, plaintext
 
 
-def update_membership(membership, phone_number=None, expires_at=None):
+_UNSET = object()
+
+
+def update_membership(membership, phone_number=None, expires_at=None, location=_UNSET):
     """In-place edits to a CURRENT (not-yet-lapsed) Membership row. Phone
     number is just contact info; only the start/expire *boundaries* matter
     for history, and those stay protected by never mutating an already-
-    lapsed row — renewal always goes through start_membership instead."""
+    lapsed row — renewal always goes through start_membership instead.
+    `location` uses a sentinel default (not None) so a partial edit that
+    doesn't mention it leaves the existing scope untouched — None is a
+    real, meaningful value here ("All Locations"), not "unspecified"."""
     now = timezone.now()
     if membership.expires_at and membership.expires_at <= now:
         raise ServiceError("This membership period has ended — start a new one instead of editing it.")
@@ -204,6 +215,8 @@ def update_membership(membership, phone_number=None, expires_at=None):
         membership.phone_number = phone_number
     if expires_at is not None:
         membership.expires_at = expires_at
+    if location is not _UNSET:
+        membership.location = location
     membership.save()
     return membership
 

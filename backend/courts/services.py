@@ -451,10 +451,14 @@ def member_check_in(phone_number, location):
     kiosk. Admin/staff can also look it up again later without another
     check-in (Player.current_password_plaintext). No PlayerSession/token
     is created — same stateless-kiosk model as every other public action
-    here."""
+    here. A membership scoped to one specific facility (Membership.
+    location) can only check in there — "All Locations" (location=None)
+    works everywhere."""
     membership = find_active_membership_by_phone(phone_number)
     if membership is None or membership.player.user is None:
         raise ServiceError("No member found with that phone number.")
+    if membership.location_id is not None and membership.location_id != location.id:
+        raise ServiceError(f"This membership is only valid at {membership.location.name}.")
     user = membership.player.user
     _check_not_expired(user)
     plaintext = generate_member_password()

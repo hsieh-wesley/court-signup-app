@@ -68,6 +68,12 @@ class Membership(models.Model):
 
     player = models.ForeignKey(Player, on_delete=models.CASCADE, related_name="memberships")
     phone_number = models.CharField(max_length=10)
+    # Which facility this period is valid at; null means "All Locations".
+    # PROTECT (like every other Location FK) so a facility with membership
+    # history can't be hard-deleted out from under it.
+    location = models.ForeignKey(
+        "Location", null=True, blank=True, on_delete=models.PROTECT, related_name="memberships"
+    )
     starts_at = models.DateTimeField()
     expires_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

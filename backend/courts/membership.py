@@ -33,11 +33,19 @@ def find_active_membership_by_phone(phone_number, at=None):
     )
 
 
-def membership_status_for(user, at=None):
+def membership_status_for(user, at=None, location=None):
     """MembershipSnapshot.MEMBER / .NON_MEMBER for `user` at `at` (default:
-    now) — the value baked into LoginLog/CourtActivityLog rows at write
-    time so history never reclassifies itself later."""
+    now), scoped to `location` when given — the value baked into
+    LoginLog/CourtActivityLog rows at write time so history never
+    reclassifies itself later. A membership scoped to a specific facility
+    only counts as MEMBER for events at that facility; one scoped to "All
+    Locations" (Membership.location=None) counts everywhere. Passing no
+    `location` (e.g. an admin login with no facility context) checks
+    membership globally, same as before location-scoping existed."""
     player = getattr(user, "player", None)
-    if active_membership(player, at=at) is not None:
-        return MembershipSnapshot.MEMBER
-    return MembershipSnapshot.NON_MEMBER
+    membership = active_membership(player, at=at)
+    if membership is None:
+        return MembershipSnapshot.NON_MEMBER
+    if location is not None and membership.location_id is not None and membership.location_id != location.id:
+        return MembershipSnapshot.NON_MEMBER
+    return MembershipSnapshot.MEMBER

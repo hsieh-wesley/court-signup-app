@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Eye, EyeOff, Plus } from "lucide-react";
 import { useAuth } from "../../AuthContext";
+import { useFacility } from "../../LocationContext";
 import { adminApi } from "../../apiClient";
 import Modal from "../../components/Modal";
 import Badge from "../../components/Badge";
@@ -55,14 +56,34 @@ function PasswordReveal({ password }) {
   );
 }
 
+// A membership can be valid everywhere ("All Locations", value=null) or
+// scoped to one specific facility — member check-in at any other
+// facility is rejected when scoped.
+function LocationSelect({ label = "Valid at", value, onChange, locations }) {
+  return (
+    <label>
+      {label}
+      <select value={value ?? ""} onChange={(e) => onChange(e.target.value || null)}>
+        <option value="">All Locations</option>
+        {locations.map((loc) => (
+          <option key={loc.id} value={loc.id}>
+            {loc.name}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 function dateInputValue(iso) {
   return iso ? new Date(iso).toISOString().slice(0, 10) : "";
 }
 
-function AddMemberForm({ onCreate }) {
+function AddMemberForm({ onCreate, locations }) {
   const [username, setUsername] = useState("");
   const [phone, setPhone] = useState("");
   const [expiresAt, setExpiresAt] = useState("");
+  const [locationId, setLocationId] = useState(null);
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -75,10 +96,12 @@ function AddMemberForm({ onCreate }) {
         username,
         phoneNumber: phone,
         expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
+        locationId,
       });
       setUsername("");
       setPhone("");
       setExpiresAt("");
+      setLocationId(null);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -97,6 +120,7 @@ function AddMemberForm({ onCreate }) {
         <input {...phoneInputProps(phone, setPhone)} required />
       </label>
       <PhonePreview digits={phone} />
+      <LocationSelect value={locationId} onChange={setLocationId} locations={locations} />
       <label>
         Expiration (optional)
         <input type="date" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} />
@@ -109,10 +133,12 @@ function AddMemberForm({ onCreate }) {
   );
 }
 
-function ManageMembershipModal({ member, onClose, onEdit, onRenew, history }) {
+function ManageMembershipModal({ member, onClose, onEdit, onRenew, history, locations }) {
   const [phone, setPhone] = useState(member.phone_number || "");
   const [expiresAt, setExpiresAt] = useState(dateInputValue(member.expires_at));
+  const [locationId, setLocationId] = useState(member.location_id);
   const [renewPhone, setRenewPhone] = useState("");
+  const [renewLocationId, setRenewLocationId] = useState(member.location_id);
   const [error, setError] = useState(null);
 
   async function handleSave(e) {
@@ -122,6 +148,7 @@ function ManageMembershipModal({ member, onClose, onEdit, onRenew, history }) {
       await onEdit(member, {
         phoneNumber: phone,
         expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
+        locationId,
       });
     } catch (err) {
       setError(err.message);
@@ -132,7 +159,7 @@ function ManageMembershipModal({ member, onClose, onEdit, onRenew, history }) {
     e.preventDefault();
     setError(null);
     try {
-      await onRenew(member, renewPhone);
+      await onRenew(member, renewPhone, renewLocationId);
     } catch (err) {
       setError(err.message);
     }
@@ -151,6 +178,7 @@ function ManageMembershipModal({ member, onClose, onEdit, onRenew, history }) {
       <p>
         Password: <PasswordReveal password={member.password} />
       </p>
+      <p>Valid at: {member.location_name || "All Locations"}</p>
 
       {member.status === "active" ? (
         <form onSubmit={handleSave} className="form">
@@ -159,6 +187,7 @@ function ManageMembershipModal({ member, onClose, onEdit, onRenew, history }) {
             <input {...phoneInputProps(phone, setPhone)} required />
           </label>
           <PhonePreview digits={phone} />
+          <LocationSelect value={locationId} onChange={setLocationId} locations={locations} />
           <label>
             Expiration (blank = none)
             <input type="date" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} />
@@ -174,6 +203,7 @@ function ManageMembershipModal({ member, onClose, onEdit, onRenew, history }) {
             <input {...phoneInputProps(renewPhone, setRenewPhone)} required />
           </label>
           <PhonePreview digits={renewPhone} />
+          <LocationSelect value={renewLocationId} onChange={setRenewLocationId} locations={locations} />
           <button type="submit" className="btn btn-primary btn-sm" disabled={renewPhone.length !== 10}>
             Renew membership
           </button>
@@ -188,6 +218,8 @@ function ManageMembershipModal({ member, onClose, onEdit, onRenew, history }) {
             <span>
               {formatPhone(p.phone_number)} — {new Date(p.starts_at).toLocaleDateString()} to{" "}
               {p.expires_at ? new Date(p.expires_at).toLocaleDateString() : "no expiration"}
+              {" — "}
+              {p.location_name}
             </span>
           </li>
         ))}
@@ -211,6 +243,7 @@ function ManageMembershipModal({ member, onClose, onEdit, onRenew, history }) {
 
 export default function MembershipPanel() {
   const { token } = useAuth();
+  const { locations } = useFacility();
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [addOpen, setAddOpen] = useState(false);
@@ -230,22 +263,23 @@ export default function MembershipPanel() {
 
   const sorted = useMemo(() => [...members].sort((a, b) => a.display_name.localeCompare(b.display_name)), [members]);
 
-  async function handleCreate({ username, phoneNumber, expiresAt }) {
-    const payload = await adminApi.startMembership(token, { username, phoneNumber, expiresAt });
+  async function handleCreate({ username, phoneNumber, expiresAt, locationId }) {
+    const payload = await adminApi.startMembership(token, { username, phoneNumber, expiresAt, locationId });
     if (payload.password) setCredential({ username: payload.username, password: payload.password });
     setAddOpen(false);
     await refresh();
   }
 
-  async function handleEdit(member, { phoneNumber, expiresAt }) {
-    await adminApi.editMembership(token, member.id, { phoneNumber, expiresAt });
+  async function handleEdit(member, { phoneNumber, expiresAt, locationId }) {
+    await adminApi.editMembership(token, member.id, { phoneNumber, expiresAt, locationId });
     await refresh();
   }
 
-  async function handleRenew(member, phoneNumber) {
+  async function handleRenew(member, phoneNumber, locationId) {
     const payload = await adminApi.startMembership(token, {
       username: member.username,
       phoneNumber,
+      locationId,
     });
     if (payload.password) setCredential({ username: payload.username, password: payload.password });
     await refresh();
@@ -293,6 +327,7 @@ export default function MembershipPanel() {
                 <th>Phone</th>
                 <th>Status</th>
                 <th>Password</th>
+                <th>Location</th>
                 <th>Member Since</th>
                 <th>Expires</th>
                 <th>Actions</th>
@@ -313,6 +348,7 @@ export default function MembershipPanel() {
                   <td>
                     <PasswordReveal password={member.password} />
                   </td>
+                  <td>{member.location_name || "All Locations"}</td>
                   <td>{new Date(member.member_since).toLocaleDateString()}</td>
                   <td>{member.expires_at ? new Date(member.expires_at).toLocaleDateString() : "No expiration"}</td>
                   <td>
@@ -329,7 +365,7 @@ export default function MembershipPanel() {
 
       {addOpen && (
         <Modal title="Add Member" onClose={() => setAddOpen(false)}>
-          <AddMemberForm onCreate={handleCreate} />
+          <AddMemberForm onCreate={handleCreate} locations={locations} />
         </Modal>
       )}
 
@@ -340,6 +376,7 @@ export default function MembershipPanel() {
           onClose={() => setManagingId(null)}
           onEdit={handleEdit}
           onRenew={handleRenew}
+          locations={locations}
         />
       )}
     </div>

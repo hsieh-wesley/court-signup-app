@@ -413,6 +413,7 @@ class AdminMembershipListCreateView(APIView):
                 username=data["username"],
                 phone_number=data["phone_number"],
                 expires_at=data.get("expires_at"),
+                location=data.get("location"),
             )
         except services.ServiceError as exc:
             return Response({"detail": str(exc)}, status=exc.status)

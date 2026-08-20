@@ -9,7 +9,7 @@ def log_player_auth_event(user, location, context):
         location=location,
         location_name=location.name if location else "",
         context=context,
-        membership_status=membership_status_for(user),
+        membership_status=membership_status_for(user, location=location),
     )
 
 
@@ -25,8 +25,8 @@ def log_pair_event(event_type, court, entry, pair, reason="", actor=None):
         pair=pair,
         player_1_username=pair.player_1.username,
         player_2_username=pair.player_2.username,
-        player_1_membership_status=membership_status_for(pair.player_1),
-        player_2_membership_status=membership_status_for(pair.player_2),
+        player_1_membership_status=membership_status_for(pair.player_1, location=court.location),
+        player_2_membership_status=membership_status_for(pair.player_2, location=court.location),
         actor_username=actor.username if actor else "",
     )
 

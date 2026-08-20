@@ -172,12 +172,15 @@ class AdminMembershipSerializer(serializers.ModelSerializer):
     expires_at = serializers.SerializerMethodField()
     periods = serializers.SerializerMethodField()
     password = serializers.SerializerMethodField()
+    location_id = serializers.SerializerMethodField()
+    location_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Player
         fields = [
             "id", "display_name", "username", "phone_number", "status",
             "member_since", "expires_at", "periods", "password",
+            "location_id", "location_name",
         ]
 
     def _latest(self, player):
@@ -204,6 +207,16 @@ class AdminMembershipSerializer(serializers.ModelSerializer):
         latest = self._latest(player)
         return latest.expires_at if latest else None
 
+    def get_location_id(self, player):
+        latest = self._latest(player)
+        return latest.location_id if latest else None
+
+    def get_location_name(self, player):
+        latest = self._latest(player)
+        if latest is None:
+            return None
+        return latest.location.name if latest.location_id else "All Locations"
+
     def get_periods(self, player):
         return [
             {
@@ -211,24 +224,36 @@ class AdminMembershipSerializer(serializers.ModelSerializer):
                 "phone_number": m.phone_number,
                 "starts_at": m.starts_at,
                 "expires_at": m.expires_at,
+                "location_name": m.location.name if m.location_id else "All Locations",
             }
-            for m in player.memberships.order_by("-starts_at")
+            for m in player.memberships.select_related("location").order_by("-starts_at")
         ]
 
 
 class AdminMembershipCreateSerializer(serializers.Serializer):
     """Also used to renew a lapsed member: pass their existing username
     and admin_services.start_membership reuses that account rather than
-    creating a duplicate."""
+    creating a duplicate. location_id omitted/null means "All Locations"."""
 
     username = serializers.CharField(max_length=20)
     phone_number = serializers.CharField(max_length=10, min_length=10)
     expires_at = serializers.DateTimeField(required=False, allow_null=True, default=None)
+    location_id = serializers.PrimaryKeyRelatedField(
+        source="location", queryset=Location.objects.filter(is_active=True),
+        required=False, allow_null=True, default=None,
+    )
 
 
 class AdminMembershipEditSerializer(serializers.Serializer):
     phone_number = serializers.CharField(max_length=10, min_length=10, required=False)
     expires_at = serializers.DateTimeField(required=False, allow_null=True)
+    # No `default` here (unlike the create serializer): omitting this key
+    # must leave the existing location scope untouched, not reset it to
+    # "All Locations" — see admin_services.update_membership's _UNSET.
+    location_id = serializers.PrimaryKeyRelatedField(
+        source="location", queryset=Location.objects.filter(is_active=True),
+        required=False, allow_null=True,
+    )
 
 
 class AdminPlayerCreateSerializer(serializers.Serializer):
