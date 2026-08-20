@@ -145,6 +145,8 @@ export const adminApi = {
       token,
       body: { count },
     }),
+  deleteLocation: (token, locationId) =>
+    request(`/admin/locations/${locationId}/delete/`, { method: "POST", token }),
   getLoginHistory: (token, filters) =>
     request(`/admin/history/logins/${qs(filters)}`, { token }),
   getCourtActivityHistory: (token, filters) =>

@@ -11,6 +11,7 @@ from .models import (
     Court,
     CourtActivityLog,
     Location,
+    LoginLog,
     Membership,
     Pair,
     Player,
@@ -286,6 +287,38 @@ def edit_location(location, name=None, is_active=None):
         location.is_active = True
         location.save()
     return location
+
+
+def location_has_history(location):
+    """True if anything about this location was ever recorded — a
+    check-in, a court event, or a queue entry on any of its courts (past
+    or present, regardless of that entry's own status). Court/LoginLog/
+    CourtActivityLog all PROTECT their location FK, so this mirrors
+    exactly what the database would refuse to cascade-delete through."""
+    return (
+        LoginLog.objects.filter(location=location).exists()
+        or CourtActivityLog.objects.filter(location=location).exists()
+        or QueueEntry.objects.filter(court__location=location).exists()
+    )
+
+
+def delete_location(location):
+    """Permanently deletes a location only when it has zero historical
+    footprint. Otherwise refuses — deactivating (see deactivate_location)
+    is the supported way to retire a location that has any history, since
+    hard-deleting it would either violate the PROTECT constraints on
+    Court/LoginLog/CourtActivityLog or, worse, silently take real history
+    down with it."""
+    if location_has_history(location):
+        raise ServiceError(
+            f"{location.name} has recorded history (check-ins, court activity, or "
+            "past queue entries) and can't be permanently deleted. Deactivate it "
+            "instead — it disappears from kiosk selection but its history stays intact.",
+            status=409,
+        )
+    with transaction.atomic():
+        location.courts.all().delete()
+        location.delete()
 
 
 def set_court_count(location, target_count, actor=None):

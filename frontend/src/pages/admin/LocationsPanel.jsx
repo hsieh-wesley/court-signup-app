@@ -51,7 +51,7 @@ function AddLocationForm({ onCreate }) {
   );
 }
 
-function LocationManageModal({ location, onClose, onAction }) {
+function LocationManageModal({ location, onClose, onAction, isSuperuser }) {
   const [name, setName] = useState(location.name);
   const [countInput, setCountInput] = useState(String(location.court_count));
   const [error, setError] = useState(null);
@@ -114,6 +114,29 @@ function LocationManageModal({ location, onClose, onAction }) {
           </button>
         )}
       </div>
+
+      {isSuperuser && (
+        <div style={{ marginTop: "var(--space-5)", paddingTop: "var(--space-4)", borderTop: "1px solid var(--color-border)" }}>
+          <h4>Danger zone</h4>
+          {location.has_history ? (
+            <p className="muted">
+              {location.name} has recorded history (check-ins, court activity, or past queue
+              entries) — permanent deletion isn't available. Deactivate it above to remove it
+              from kiosk selection while keeping that history intact.
+            </p>
+          ) : (
+            <>
+              <p className="muted">
+                {location.name} has no recorded history yet, so it can be permanently deleted.
+                This also removes its (currently empty) courts. This cannot be undone.
+              </p>
+              <button className="btn btn-danger" onClick={() => onAction("delete", location)}>
+                Delete Location
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </Modal>
   );
 }
@@ -161,10 +184,14 @@ export default function LocationsPanel() {
         setManagingId(null);
       } else if (action === "activate") {
         await adminApi.editLocation(token, location.id, { isActive: true });
+      } else if (action === "delete") {
+        if (!window.confirm(`Permanently delete ${location.name}? This cannot be undone.`)) return;
+        await adminApi.deleteLocation(token, location.id);
+        setManagingId(null);
       }
       // The global facility selector (and any kiosk showing it) reads from
-      // its own fetch — refresh it too so a rename/activation shows up
-      // there immediately instead of only in this admin table.
+      // its own fetch — refresh it too so a rename/activation/deletion
+      // shows up there immediately instead of only in this admin table.
       await Promise.all([refresh(), refreshLocations()]);
     } catch (err) {
       setError(err.message);
@@ -245,6 +272,7 @@ export default function LocationsPanel() {
           location={managingLocation}
           onClose={() => setManagingId(null)}
           onAction={handleAction}
+          isSuperuser={isSuperuser}
         />
       )}
     </div>

@@ -1,7 +1,7 @@
 import pytest
 
-from courts import admin_services, services
-from courts.models import Court, CourtActivityLog, QueueEntry
+from courts import activity_log, admin_services, services
+from courts.models import Court, CourtActivityLog, Location, LoginLog, QueueEntry
 from courts.tests.factories import make_court, make_location, make_user
 
 pytestmark = pytest.mark.django_db
@@ -131,3 +131,57 @@ def test_create_court_helper_auto_numbers():
     court2 = make_court()
     assert court2.number == court1.number + 1
     assert court1.location_id == court2.location_id
+
+
+# Delete Location: hard-delete only when zero history, otherwise refuse.
+def test_delete_location_with_no_history_hard_deletes_it_and_its_courts():
+    location = admin_services.create_location("Fresh Location", court_count=3)
+    location_id = location.id
+
+    admin_services.delete_location(location)
+
+    assert not Location.objects.filter(id=location_id).exists()
+    assert not Court.objects.filter(location_id=location_id).exists()
+
+
+def test_delete_location_refuses_when_queue_history_exists():
+    location = admin_services.create_location("Queue History Loc", court_count=1)
+    court = Court.objects.get(location=location, number=1)
+    alice = make_user("alice")
+    make_user("bob")
+    services.create_queue_entry(court=court, pairs=[["alice", "bob"]], created_by=alice)
+
+    with pytest.raises(services.ServiceError):
+        admin_services.delete_location(location)
+
+    assert Location.objects.filter(id=location.id).exists()
+
+
+def test_delete_location_refuses_when_activity_log_history_exists():
+    location = admin_services.create_location("Activity History Loc", court_count=1)
+    court = Court.objects.get(location=location, number=1)
+    activity_log.log_court_event(CourtActivityLog.EventType.COURT_DEACTIVATED, court)
+    assert CourtActivityLog.objects.filter(location=location).exists()
+
+    with pytest.raises(services.ServiceError):
+        admin_services.delete_location(location)
+
+
+def test_delete_location_refuses_when_login_log_history_exists():
+    location = admin_services.create_location("Login History Loc", court_count=1)
+    alice = make_user("alice")
+    LoginLog.objects.create(
+        user=alice, username="alice", location=location, context=LoginLog.Context.CHECK_IN
+    )
+
+    with pytest.raises(services.ServiceError):
+        admin_services.delete_location(location)
+
+
+def test_has_history_reflects_delete_eligibility():
+    empty_location = admin_services.create_location("Empty History Loc", court_count=1)
+    assert admin_services.location_has_history(empty_location) is False
+
+    court = Court.objects.get(location=empty_location, number=1)
+    activity_log.log_court_event(CourtActivityLog.EventType.COURT_DEACTIVATED, court)
+    assert admin_services.location_has_history(empty_location) is True

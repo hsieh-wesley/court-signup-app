@@ -68,6 +68,11 @@ urlpatterns = [
         name="admin-location-court-count",
     ),
     path(
+        "locations/<int:pk>/delete/",
+        views.AdminLocationDeleteView.as_view(),
+        name="admin-location-delete",
+    ),
+    path(
         "staff/reset-password/",
         views.AdminStaffResetPasswordView.as_view(),
         name="admin-staff-reset-password",

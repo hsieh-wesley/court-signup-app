@@ -100,12 +100,13 @@ class AdminLocationSerializer(serializers.ModelSerializer):
     waiting_room_count = serializers.SerializerMethodField()
     in_queue_count = serializers.SerializerMethodField()
     on_court_count = serializers.SerializerMethodField()
+    has_history = serializers.SerializerMethodField()
 
     class Meta:
         model = Location
         fields = [
             "id", "name", "is_active", "created_at", "court_count", "active_court_count",
-            "waiting_room_count", "in_queue_count", "on_court_count",
+            "waiting_room_count", "in_queue_count", "on_court_count", "has_history",
         ]
 
     def get_court_count(self, location):
@@ -127,6 +128,11 @@ class AdminLocationSerializer(serializers.ModelSerializer):
 
     def get_on_court_count(self, location):
         return self._counts(location)["on_court"]
+
+    def get_has_history(self, location):
+        from . import admin_services
+
+        return admin_services.location_has_history(location)
 
 
 class LoginLogSerializer(serializers.ModelSerializer):

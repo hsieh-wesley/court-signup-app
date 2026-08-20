@@ -26,6 +26,38 @@ function classifyInput(raw) {
   return "phone";
 }
 
+// Always renders the same single <p> — its text/icon/class change, but the
+// element itself is never added to or removed from the DOM, so it can
+// never cause a layout/focus side effect near the input above it.
+function StatusLine({ kind, checking, available, error }) {
+  let className = "muted";
+  let icon = null;
+  let text = " "; // non-breaking space — keeps the line's height reserved even when empty
+
+  if (error) {
+    className = "error";
+    icon = <XCircle size={14} />;
+    text = error;
+  } else if (kind === "username" && checking) {
+    text = "Checking availability…";
+  } else if (kind === "username" && available === false) {
+    className = "error";
+    icon = <XCircle size={14} />;
+    text = "That username is taken.";
+  } else if (kind === "username" && available === true) {
+    className = "success";
+    icon = <CheckCircle2 size={14} />;
+    text = "Available!";
+  }
+
+  return (
+    <p className={className}>
+      {icon}
+      {text}
+    </p>
+  );
+}
+
 // Self-service account creation, or a member's phone-based Check In.
 // Neither touches AuthContext — nothing here ever signs the public kiosk
 // in as that player.
@@ -204,28 +236,15 @@ export default function JoinPage() {
             onChange={(e) => setInput(e.target.value)}
             placeholder="(555) 010-0001 or a username"
             autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="off"
-            spellCheck="false"
             required
           />
         </label>
-        {kind === "username" && checking && <p className="muted">Checking availability…</p>}
-        {kind === "username" && !checking && available === false && (
-          <p className="error">
-            <XCircle size={14} /> That username is taken.
-          </p>
-        )}
-        {kind === "username" && !checking && available === true && (
-          <p className="success">
-            <CheckCircle2 size={14} /> Available!
-          </p>
-        )}
-        {error && (
-          <p className="error">
-            <XCircle size={14} /> {error}
-          </p>
-        )}
+        {/* One stable status node that only ever changes its own text/class,
+            instead of four separately-conditioned <p> elements that mount
+            and unmount as `checking`/`available`/`error` change — nothing
+            near the input is ever added to or removed from the DOM after
+            it renders. */}
+        <StatusLine kind={kind} checking={checking} available={available} error={error} />
         <button
           type="submit"
           className="btn btn-primary btn-lg"

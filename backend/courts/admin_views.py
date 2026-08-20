@@ -340,6 +340,25 @@ class AdminLocationDetailView(APIView):
         return Response(AdminLocationSerializer(location).data)
 
 
+class AdminLocationDeleteView(APIView):
+    """Admin/superuser-only, matching create. Permanently deletes only if
+    admin_services.delete_location finds zero history; otherwise responds
+    with the same explanation the location's has_history field predicts,
+    so admin knows to deactivate instead."""
+
+    permission_classes = [IsSuperUser]
+
+    def post(self, request, pk):
+        location = _get_location_or_404(pk)
+        if location is None:
+            return Response({"detail": "Location not found."}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            admin_services.delete_location(location)
+        except services.ServiceError as exc:
+            return Response({"detail": str(exc)}, status=exc.status)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
 class AdminLocationCourtCountView(APIView):
     permission_classes = [IsAdmin]
 

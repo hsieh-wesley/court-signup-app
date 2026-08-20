@@ -4,7 +4,7 @@ from django.core.management import call_command
 
 from courts import admin_services, services
 from courts.models import Location, PlayerSession
-from courts.tests.factories import authed_client, make_admin_user
+from courts.tests.factories import authed_client, make_admin_user, make_user
 
 User = get_user_model()
 
@@ -38,6 +38,44 @@ def test_staff_can_edit_existing_location_and_court_count():
 
     resp = client.post(f"/api/admin/locations/{location.id}/court-count/", {"count": 4})
     assert resp.status_code == 200
+
+
+# Delete Location is admin/superuser-only, same as create.
+def test_staff_cannot_delete_location():
+    admin_services.create_location("No Delete For Staff", court_count=1)
+    location = Location.objects.get(name="No Delete For Staff")
+    staff = make_admin_user("staff", is_superuser=False)
+    client = authed_client(staff)
+
+    resp = client.post(f"/api/admin/locations/{location.id}/delete/")
+    assert resp.status_code == 403
+    assert Location.objects.filter(id=location.id).exists()
+
+
+def test_admin_can_delete_location_with_no_history():
+    admin_services.create_location("Delete Me", court_count=1)
+    location = Location.objects.get(name="Delete Me")
+    admin = make_admin_user("admin")
+    client = authed_client(admin)
+
+    resp = client.post(f"/api/admin/locations/{location.id}/delete/")
+    assert resp.status_code == 204
+    assert not Location.objects.filter(id=location.id).exists()
+
+
+def test_admin_delete_location_with_history_returns_409_and_explanation():
+    location = admin_services.create_location("History Blocked Delete", court_count=1)
+    court = location.courts.get(number=1)
+    alice = make_user("alice")
+    make_user("bob")
+    services.create_queue_entry(court=court, pairs=[["alice", "bob"]], created_by=alice)
+    admin = make_admin_user("admin")
+    client = authed_client(admin)
+
+    resp = client.post(f"/api/admin/locations/{location.id}/delete/")
+    assert resp.status_code == 409
+    assert "history" in resp.json()["detail"].lower()
+    assert Location.objects.filter(id=location.id).exists()
 
 
 # DoD F2/F3: only admin can reset staff's password; staff cannot reset it
