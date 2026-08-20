@@ -6,15 +6,27 @@ import { X } from "lucide-react";
 // pressing Escape closes it; clicking inside the card does not.
 export default function Modal({ title, onClose, children, className = "" }) {
   const cardRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  // Focus-on-open must run exactly once, at mount — not on every render
+  // where `onClose` happens to be a new function identity (e.g. an inline
+  // arrow prop recreated by a parent re-render on every keystroke inside
+  // the modal's own form). Re-focusing the card on each of those renders
+  // was yanking focus away from whatever input the user was actively
+  // typing into. The Escape listener still always calls the latest
+  // onClose via the ref, without needing to be in this effect's deps.
+  useEffect(() => {
+    cardRef.current?.focus();
+  }, []);
 
   useEffect(() => {
     function handleKeyDown(e) {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") onCloseRef.current();
     }
     document.addEventListener("keydown", handleKeyDown);
-    cardRef.current?.focus();
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
+  }, []);
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
