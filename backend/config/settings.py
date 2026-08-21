@@ -17,7 +17,7 @@ SECRET_KEY = env("DJANGO_SECRET_KEY", default="django-insecure-dev-key-change-me
 
 DEBUG = env.bool("DJANGO_DEBUG", default=True)
 
-ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
+ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
 
 
 # Application definition
@@ -37,6 +37,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -110,8 +111,21 @@ USE_TZ = True
 
 
 # Static files (CSS, JavaScript, Images)
+# WhiteNoise serves these directly from the Django process -- no separate
+# static host/CDN needed. Safe to enable unconditionally: it works the
+# same whether DEBUG is True or False, so local dev is unaffected.
 
 STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
+
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
@@ -127,11 +141,34 @@ REST_FRAMEWORK = {
     ],
 }
 
-# CORS - allow the local Vite dev server
+# CORS - allow the local Vite dev server (and, once set, a real frontend origin)
 CORS_ALLOWED_ORIGINS = env.list(
     "CORS_ALLOWED_ORIGINS", default=["http://localhost:5173", "http://localhost:5183"]
 )
 
+# Required by Django for cross-origin CSRF-protected requests once the
+# frontend and backend are on different HTTPS origins. Empty by default --
+# harmless locally, since the dev server never needs it.
+CSRF_TRUSTED_ORIGINS = env.list("DJANGO_CSRF_TRUSTED_ORIGINS", default=[])
+
+# Only trust the X-Forwarded-Proto header from a reverse proxy when
+# explicitly told to -- a host that ISN'T actually behind a proxy setting
+# this header would let a client spoof "I'm HTTPS" and defeat
+# SECURE_SSL_REDIRECT below, so this is opt-in, not assumed. Render/
+# Railway/Fly-style platforms terminate TLS at a proxy and need this on.
+if env.bool("DJANGO_TRUST_PROXY_HEADER", default=False):
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+# HTTPS-only hardening, off by default so local HTTP dev keeps working
+# with zero required env changes. Turn on with DJANGO_SECURE=True once
+# actually serving over HTTPS.
+if env.bool("DJANGO_SECURE", default=False):
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = 60 * 60 * 24 * 365
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
 
 # --- Court signup app settings ---
 # Single source of truth for the business-rule constants used across

@@ -1,3 +1,13 @@
+// A production build must never silently ship pointed at localhost --
+// fail loudly at build/load time instead so a missing env var can't
+// reach users as a broken app. Dev builds keep the convenience fallback.
+if (import.meta.env.PROD && !import.meta.env.VITE_API_BASE_URL) {
+  throw new Error(
+    "VITE_API_BASE_URL is required for a production build and was not set. " +
+      "Set it to the real API host before building (see frontend/.env.example)."
+  );
+}
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api";
 
 async function request(path, { method = "GET", body, token } = {}) {

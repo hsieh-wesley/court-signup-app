@@ -33,16 +33,6 @@ class Player(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     is_active = models.BooleanField(default=True)
     expires_at = models.DateTimeField(null=True, blank=True)
-    # Kept in lockstep with auth.User's hashed password everywhere a
-    # plaintext password is (re)generated (see admin_services/services).
-    # A deliberate exception to "never store plaintext passwords": these
-    # are auto-generated, low-stakes kiosk credentials (an animal name),
-    # not a secret the player chose or reuses elsewhere, and the app
-    # already shows them in plaintext on-screen at creation/reset time —
-    # this just lets admin/staff view the current one again without
-    # forcing a reset. Blank for accounts created before this field
-    # existed, until their password is next (re)generated.
-    current_password_plaintext = models.CharField(max_length=100, blank=True, default="")
 
     def __str__(self):
         return self.display_name

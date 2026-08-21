@@ -12,7 +12,7 @@ _DEFAULT_LOCATION_NAME = "Test Location"
 
 def make_user(username, expires_at=None):
     user = User.objects.create_user(username=username, password="pw12345")
-    kwargs = {"user": user, "display_name": username, "current_password_plaintext": "pw12345"}
+    kwargs = {"user": user, "display_name": username}
     if expires_at is not None:
         kwargs["expires_at"] = expires_at
     Player.objects.create(**kwargs)
