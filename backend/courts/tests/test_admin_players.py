@@ -177,3 +177,92 @@ def test_admin_players_endpoint_reports_null_password_for_guest_with_no_login():
     resp = client.get("/api/admin/players/")
     row = next(r for r in resp.data if r["display_name"] == "Guest Only")
     assert row["password"] is None
+
+
+# Delete Player: only a non-member with zero court/queue activity is
+# eligible; even then it truly deletes the account (and its LoginLog
+# rows -- non-member identity isn't preserved long-term, unlike every
+# other delete in this app).
+def test_delete_player_removes_fresh_non_member_account_and_its_login_log():
+    player, _plaintext = admin_services.create_player("Guest", username="guest", enable_login=True)
+    activity_log.log_player_auth_event(player.user, None, LoginLog.Context.REGISTRATION)
+    assert LoginLog.objects.filter(username="guest").exists()
+    player_id = player.id
+    user_id = player.user_id
+
+    admin_services.delete_player(player)
+
+    assert not Player.objects.filter(id=player_id).exists()
+    from django.contrib.auth import get_user_model
+
+    assert not get_user_model().objects.filter(id=user_id).exists()
+    assert not LoginLog.objects.filter(username="guest").exists()
+
+
+def test_delete_player_refuses_a_member():
+    _player, membership, _plaintext = admin_services.start_membership("kate", "5551230099")
+    with pytest.raises(services.ServiceError, match="membership"):
+        admin_services.delete_player(membership.player)
+    assert Player.objects.filter(id=membership.player_id).exists()
+
+
+def test_delete_player_refuses_someone_with_court_activity():
+    court = make_court()
+    alice = make_user("alice")
+    make_user("bob")
+    services.create_queue_entry(court=court, pairs=[["alice", "bob"]], created_by=alice)
+    player = Player.objects.get(user=alice)
+
+    with pytest.raises(services.ServiceError, match="play history"):
+        admin_services.delete_player(player)
+    assert Player.objects.filter(id=player.id).exists()
+
+
+def test_player_can_delete_is_false_once_membership_or_activity_exists():
+    fresh, _plaintext = admin_services.create_player("Guest", username="guesttwo", enable_login=True)
+    assert admin_services.player_can_delete(fresh) is True
+
+    court = make_court()
+    alice = make_user("alice")
+    make_user("bob")
+    services.create_queue_entry(court=court, pairs=[["alice", "bob"]], created_by=alice)
+    played = Player.objects.get(user=alice)
+    assert admin_services.player_can_delete(played) is False
+
+
+def test_staff_cannot_delete_player_but_admin_can():
+    player, _plaintext = admin_services.create_player("Guest", username="guestthree", enable_login=True)
+
+    staff = make_admin_user("staff", is_superuser=False)
+    staff_client = authed_client(staff)
+    resp = staff_client.post(f"/api/admin/players/{player.id}/delete/")
+    assert resp.status_code == 403
+    assert Player.objects.filter(id=player.id).exists()
+
+    admin = make_admin_user("admin")
+    admin_client = authed_client(admin)
+    resp = admin_client.post(f"/api/admin/players/{player.id}/delete/")
+    assert resp.status_code == 204
+    assert not Player.objects.filter(id=player.id).exists()
+
+
+def test_admin_delete_endpoint_refuses_member_with_409():
+    _player, membership, _plaintext = admin_services.start_membership("kate", "5551230099")
+    admin = make_admin_user()
+    client = authed_client(admin)
+    resp = client.post(f"/api/admin/players/{membership.player_id}/delete/")
+    assert resp.status_code == 409
+    assert Player.objects.filter(id=membership.player_id).exists()
+
+
+def test_admin_players_endpoint_exposes_can_delete():
+    fresh, _plaintext = admin_services.create_player("Guest", username="guestfour", enable_login=True)
+    _player, membership, _plaintext2 = admin_services.start_membership("kate", "5551230099")
+
+    admin = make_admin_user()
+    client = authed_client(admin)
+    resp = client.get("/api/admin/players/")
+    row_guest = next(r for r in resp.data if r["username"] == "guestfour")
+    row_member = next(r for r in resp.data if r["username"] == "kate")
+    assert row_guest["can_delete"] is True
+    assert row_member["can_delete"] is False

@@ -108,6 +108,8 @@ export const adminApi = {
     request(`/admin/players/${playerId}/reset-password/`, { method: "POST", token }),
   deactivatePlayer: (token, playerId) =>
     request(`/admin/players/${playerId}/deactivate/`, { method: "POST", token }),
+  deletePlayer: (token, playerId) =>
+    request(`/admin/players/${playerId}/delete/`, { method: "POST", token }),
   createTestPlayers: (token, count = 8) =>
     request("/admin/players/bulk-test/", { method: "POST", token, body: { count } }),
   createCourt: (token, { locationId, number, capacity }) =>

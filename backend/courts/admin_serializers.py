@@ -23,6 +23,7 @@ class AdminPlayerSerializer(serializers.ModelSerializer):
     status = serializers.SerializerMethodField()
     court_number = serializers.SerializerMethodField()
     checked_in_at = serializers.SerializerMethodField()
+    can_delete = serializers.SerializerMethodField()
 
     class Meta:
         model = Player
@@ -39,6 +40,7 @@ class AdminPlayerSerializer(serializers.ModelSerializer):
             "status",
             "court_number",
             "checked_in_at",
+            "can_delete",
         ]
 
     def get_username(self, player):
@@ -46,6 +48,11 @@ class AdminPlayerSerializer(serializers.ModelSerializer):
 
     def get_password(self, player):
         return player.current_password_plaintext or None
+
+    def get_can_delete(self, player):
+        from . import admin_services
+
+        return admin_services.player_can_delete(player)
 
     def get_login_active(self, player):
         return bool(player.user and player.user.is_active)

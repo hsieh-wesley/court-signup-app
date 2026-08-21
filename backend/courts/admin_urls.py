@@ -38,6 +38,11 @@ urlpatterns = [
         views.AdminPlayerDeactivateView.as_view(),
         name="admin-player-deactivate",
     ),
+    path(
+        "players/<int:pk>/delete/",
+        views.AdminPlayerDeleteView.as_view(),
+        name="admin-player-delete",
+    ),
     path("courts/", views.AdminCourtCreateView.as_view(), name="admin-court-create"),
     path(
         "courts/<int:pk>/remove-player/",

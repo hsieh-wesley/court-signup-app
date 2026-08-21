@@ -80,20 +80,35 @@ export default function AdminPage() {
           // on-site should only see/sign up for courts they can actually
           // walk to, so leave this on a specific facility for a real
           // front-desk kiosk; "All Locations" is for admin's own general
-          // overview, not the normal per-site default.
-          <select
-            className="location-switcher"
-            value={selectedLocationId}
-            onChange={(e) => setSelectedLocationId(e.target.value)}
-            aria-label="Facility"
+          // overview, not the normal per-site default. The visible label
+          // exists because this control's effect (what the public
+          // Overview/Join screens on this browser show) isn't otherwise
+          // obvious from inside the Admin console.
+          <label
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: "var(--space-2)",
+              fontSize: "var(--text-sm)",
+              color: "var(--color-text-secondary)",
+            }}
           >
-            <option value={ALL_LOCATIONS}>All Locations</option>
-            {locations.map((loc) => (
-              <option key={loc.id} value={loc.id}>
-                {loc.name}
-              </option>
-            ))}
-          </select>
+            Overview/Join shows:
+            <select
+              className="location-switcher"
+              value={selectedLocationId}
+              onChange={(e) => setSelectedLocationId(e.target.value)}
+              aria-label="Facility shown on Overview and Join"
+              title="Sets which facility the public Overview and Join screens show on this browser/kiosk"
+            >
+              <option value={ALL_LOCATIONS}>All Locations</option>
+              {locations.map((loc) => (
+                <option key={loc.id} value={loc.id}>
+                  {loc.name}
+                </option>
+              ))}
+            </select>
+          </label>
         )}
       </div>
 

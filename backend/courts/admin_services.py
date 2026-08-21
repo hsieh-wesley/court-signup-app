@@ -147,6 +147,47 @@ def deactivate_player(player, actor=None):
     player.save()
 
 
+def player_can_delete(player):
+    """A non-member with no real court/queue activity — the only case a
+    permanent delete is offered for. Members are never deletable this
+    way (their identity stays attached to their membership history);
+    neither is anyone who ever actually played (Pair/QueueEntry rows
+    PROTECT their player FKs regardless)."""
+    if Membership.objects.filter(player=player).exists():
+        return False
+    if player.user is None:
+        return True
+    user = player.user
+    return not (
+        QueueEntry.objects.filter(created_by=user).exists()
+        or Pair.objects.filter(Q(player_1=user) | Q(player_2=user) | Q(created_by=user)).exists()
+    )
+
+
+def delete_player(player):
+    """Permanently deletes a non-member player with no court/queue
+    activity. By explicit product decision, a non-member's identity
+    isn't preserved long-term — only aggregate history matters for them
+    (CourtActivityLog rows snapshot usernames as plain text, not a FK, so
+    those stay intact and readable either way) — so their LoginLog rows
+    (registration/check-in events) are deleted along with the account,
+    unlike every other delete in this app which refuses to touch
+    history. Members and anyone with real play history are refused; see
+    player_can_delete."""
+    if not player_can_delete(player):
+        raise ServiceError(
+            f"{player.display_name} has membership or play history and can't be permanently "
+            "deleted. Deactivate instead.",
+            status=409,
+        )
+    with transaction.atomic():
+        user = player.user
+        player.delete()
+        if user is not None:
+            LoginLog.objects.filter(user=user).delete()
+            user.delete()
+
+
 def start_membership(username, phone_number, starts_at=None, expires_at=None, location=None):
     """Starts a new Membership period for `username` — reusing their
     existing Player/User if one already exists (e.g. a non-member who

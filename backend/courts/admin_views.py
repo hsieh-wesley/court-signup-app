@@ -227,6 +227,24 @@ class AdminPlayerDeactivateView(APIView):
         return Response(AdminPlayerSerializer(player).data)
 
 
+class AdminPlayerDeleteView(APIView):
+    """Admin/superuser-only, matching Delete Location. Permanently deletes
+    only a non-member with no court/queue activity; refuses (409) with an
+    explanation otherwise — see admin_services.delete_player."""
+
+    permission_classes = [IsSuperUser]
+
+    def post(self, request, pk):
+        player = _get_player_or_404(pk)
+        if player is None:
+            return Response({"detail": "Player not found."}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            admin_services.delete_player(player)
+        except services.ServiceError as exc:
+            return Response({"detail": str(exc)}, status=exc.status)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
 class AdminBulkTestPlayersView(APIView):
     permission_classes = [IsAdmin]
 

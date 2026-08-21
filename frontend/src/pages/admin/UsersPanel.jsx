@@ -170,7 +170,7 @@ function PasswordCell({ password }) {
   );
 }
 
-function PlayerRow({ player, onAction, onSave }) {
+function PlayerRow({ player, onAction, onSave, isSuperuser }) {
   const [editing, setEditing] = useState(false);
 
   if (editing) {
@@ -250,6 +250,11 @@ function PlayerRow({ player, onAction, onSave }) {
                   Deactivate
                 </button>
               )}
+              {isSuperuser && player.can_delete && (
+                <button className="btn btn-ghost btn-sm" style={{ color: "var(--color-danger)" }} onClick={() => onAction("delete", player)}>
+                  Delete
+                </button>
+              )}
             </div>
           </details>
         </div>
@@ -266,7 +271,7 @@ const SORTERS = {
 };
 
 export default function UsersPanel({ locationId }) {
-  const { token } = useAuth();
+  const { token, isSuperuser } = useAuth();
   const [players, setPlayers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [credentials, setCredentials] = useState([]);
@@ -343,6 +348,9 @@ export default function UsersPanel({ locationId }) {
       } else if (action === "deactivate") {
         if (!window.confirm(`Deactivate ${player.display_name}? This removes them from any court/queue.`)) return;
         await adminApi.deactivatePlayer(token, player.id);
+      } else if (action === "delete") {
+        if (!window.confirm(`Permanently delete ${player.display_name}? This cannot be undone.`)) return;
+        await adminApi.deletePlayer(token, player.id);
       }
       await refresh();
     } catch (err) {
@@ -419,7 +427,13 @@ export default function UsersPanel({ locationId }) {
             </thead>
             <tbody>
               {visible.map((player) => (
-                <PlayerRow key={player.id} player={player} onAction={handleAction} onSave={handleSave} />
+                <PlayerRow
+                  key={player.id}
+                  player={player}
+                  onAction={handleAction}
+                  onSave={handleSave}
+                  isSuperuser={isSuperuser}
+                />
               ))}
             </tbody>
           </table>
