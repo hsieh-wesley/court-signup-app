@@ -133,7 +133,7 @@ function AddMemberForm({ onCreate, locations }) {
   );
 }
 
-function ManageMembershipModal({ member, onClose, onEdit, onRenew, history, locations }) {
+function ManageMembershipModal({ member, onClose, onEdit, onRenew, onResetPassword, history, locations }) {
   const [phone, setPhone] = useState(member.phone_number || "");
   const [expiresAt, setExpiresAt] = useState(dateInputValue(member.expires_at));
   const [locationId, setLocationId] = useState(member.location_id);
@@ -165,6 +165,16 @@ function ManageMembershipModal({ member, onClose, onEdit, onRenew, history, loca
     }
   }
 
+  async function handleResetPassword() {
+    if (!window.confirm(`Reset ${member.display_name}'s password?`)) return;
+    setError(null);
+    try {
+      await onResetPassword(member);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
   return (
     <Modal title={`Manage ${member.display_name}`} onClose={onClose}>
       <p>
@@ -175,8 +185,11 @@ function ManageMembershipModal({ member, onClose, onEdit, onRenew, history, loca
           <Badge status="neutral">Expired</Badge>
         )}
       </p>
-      <p>
+      <p style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
         Password: <PasswordReveal password={member.password} />
+        <button type="button" className="btn btn-secondary btn-sm" onClick={handleResetPassword}>
+          Reset Password
+        </button>
       </p>
       <p>Valid at: {member.location_name || "All Locations"}</p>
 
@@ -285,6 +298,12 @@ export default function MembershipPanel() {
     await refresh();
   }
 
+  async function handleResetPassword(member) {
+    const payload = await adminApi.resetPassword(token, member.id);
+    setCredential({ username: payload.username, password: payload.password });
+    await refresh();
+  }
+
   async function openManage(member) {
     setManagingId(member.id);
     const rows = await adminApi.getLoginHistory(token, { username: member.username });
@@ -376,6 +395,7 @@ export default function MembershipPanel() {
           onClose={() => setManagingId(null)}
           onEdit={handleEdit}
           onRenew={handleRenew}
+          onResetPassword={handleResetPassword}
           locations={locations}
         />
       )}

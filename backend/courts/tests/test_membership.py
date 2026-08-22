@@ -465,3 +465,21 @@ def test_admin_membership_patch_updates_location():
     assert resp.status_code == 200
     assert resp.data["location_id"] == loc.id
     assert resp.data["location_name"] == "Facility A"
+
+
+# Admin can reset a member's password from the Membership panel too --
+# reuses the same generic reset-password endpoint UsersPanel already
+# uses, since a member is still just a Player with a login underneath.
+def test_admin_can_reset_a_members_password():
+    _player, _membership, first = admin_services.start_membership("kate", "5551230099")
+    player = Player.objects.get(user__username="kate")
+    admin = make_admin_user()
+    client = authed_client(admin)
+
+    resp = client.post(f"/api/admin/players/{player.id}/reset-password/")
+    assert resp.status_code == 200
+    second = resp.data["password"]
+    assert second != first
+    assert services.verify_credential("kate", second)
+    with pytest.raises(services.ServiceError):
+        services.verify_credential("kate", first)
