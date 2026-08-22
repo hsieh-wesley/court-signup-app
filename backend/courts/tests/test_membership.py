@@ -69,6 +69,14 @@ def test_start_membership_creates_new_account_with_initial_password():
     assert membership.expires_at is None
 
 
+# DoD A/I, cont'd: a brand-new member's very first password is
+# animal-only from creation -- never the animal+digits scheme, matching
+# reset_password/member_check_in.
+def test_start_membership_new_account_initial_password_has_no_digits():
+    _player, _membership, plaintext = admin_services.start_membership("kate", "5551230099")
+    assert plaintext.isalpha(), f"{plaintext!r} should be animal-only, no digits"
+
+
 # DoD B/G: starting a membership for an EXISTING (non-member) player reuses
 # that account -- never creates a duplicate.
 def test_start_membership_reuses_existing_player_no_duplicate():

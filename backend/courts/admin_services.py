@@ -209,9 +209,10 @@ def start_membership(username, phone_number, starts_at=None, expires_at=None, lo
     phone number is never allowed to be active for two different members
     regardless of location scope, since it's a real-world identifier, not
     a per-facility one. Returns (player, plaintext_or_None) — plaintext
-    only when a brand-new account was created here; an existing account
-    keeps its existing password (their first check-in draws a fresh
-    member-only one)."""
+    only when a brand-new account was created here, always animal-only
+    (matching reset_password/member_check_in — a member's password is
+    never the animal+digits scheme, from the moment they become one); an
+    existing account keeps its existing password unchanged."""
     _validate_phone(phone_number)
 
     phone_conflict = find_active_membership_by_phone(phone_number)
@@ -222,7 +223,7 @@ def start_membership(username, phone_number, starts_at=None, expires_at=None, lo
         plaintext = None
     except User.DoesNotExist:
         validate_new_username(username)
-        plaintext = generate_password()
+        plaintext = generate_member_password()
         user = User.objects.create_user(username=username, password=plaintext)
         player = Player.objects.create(
             display_name=username, user=user, current_password_plaintext=plaintext
