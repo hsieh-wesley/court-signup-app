@@ -1,10 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
-import { Eye, EyeOff, Plus } from "lucide-react";
+import { Eye, EyeOff, MoreHorizontal, Plus } from "lucide-react";
 import { useAuth } from "../../AuthContext";
 import { useFacility } from "../../LocationContext";
 import { adminApi } from "../../apiClient";
 import Modal from "../../components/Modal";
 import Badge from "../../components/Badge";
+
+const STATUS_BADGE = {
+  active: "success",
+  expired: "neutral",
+};
+
+function statusText(member) {
+  return member.status === "active" ? "Active" : "Expired";
+}
 
 function formatPhone(digits) {
   if (!digits) return "—";
@@ -14,10 +23,10 @@ function formatPhone(digits) {
 
 // The editable input's own value is always exactly the raw digits the
 // admin typed — never reformatted with inserted parens/spaces/dashes.
-// Reformatting the live value on every keystroke (the previous approach)
-// fights the browser's own cursor tracking: deleting from the middle, or
-// anywhere but the very end, becomes unreliable once the displayed text
-// no longer matches 1:1 with what was actually typed/deleted. A separate,
+// Reformatting the live value on every keystroke fights the browser's
+// own cursor tracking: deleting from the middle, or anywhere but the
+// very end, becomes unreliable once the displayed text no longer
+// matches 1:1 with what was actually typed/deleted. A separate,
 // non-editable preview below shows the pretty (XXX) XXX-XXXX form instead.
 function phoneInputProps(digits, setDigits) {
   return {
@@ -31,29 +40,6 @@ function phoneInputProps(digits, setDigits) {
 function PhonePreview({ digits }) {
   if (!digits) return null;
   return <p className="muted" style={{ marginTop: "calc(-1 * var(--space-2))" }}>{formatPhone(digits)}</p>;
-}
-
-// Hidden by default, same reasoning as UsersPanel's PasswordCell — a
-// front-desk screen is often visible to whoever's standing at the
-// counter. A member's password is invalidated on every check-in, so
-// this is the only way to view their *current* one without checking
-// them in again.
-function PasswordReveal({ password }) {
-  const [revealed, setRevealed] = useState(false);
-  if (!password) return <span className="muted">—</span>;
-  return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--space-2)" }}>
-      <code>{revealed ? password : "••••••••"}</code>
-      <button
-        type="button"
-        className="btn btn-ghost btn-icon btn-sm"
-        aria-label={revealed ? "Hide password" : "Show password"}
-        onClick={() => setRevealed((r) => !r)}
-      >
-        {revealed ? <EyeOff size={14} /> : <Eye size={14} />}
-      </button>
-    </span>
-  );
 }
 
 // A membership can be valid everywhere ("All Locations", value=null) or
@@ -75,8 +61,50 @@ function LocationSelect({ label = "Valid at", value, onChange, locations }) {
   );
 }
 
+// Hidden by default (a front-desk kiosk screen is often visible to
+// whoever's standing at the counter) — click to reveal without needing
+// Reset Password, which would invalidate the member's actual credential.
+function PasswordCell({ password }) {
+  const [revealed, setRevealed] = useState(false);
+  if (!password) return <span className="muted">—</span>;
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--space-2)" }}>
+      <code>{revealed ? password : "••••••••"}</code>
+      <button
+        type="button"
+        className="btn btn-ghost btn-icon btn-sm"
+        aria-label={revealed ? "Hide password" : "Show password"}
+        onClick={() => setRevealed((r) => !r)}
+      >
+        {revealed ? <EyeOff size={14} /> : <Eye size={14} />}
+      </button>
+    </span>
+  );
+}
+
 function dateInputValue(iso) {
   return iso ? new Date(iso).toISOString().slice(0, 10) : "";
+}
+
+function CredentialBanner({ credentials, onDismiss }) {
+  if (!credentials.length) return null;
+  return (
+    <div className="credential-reveal" style={{ marginBottom: "var(--space-4)" }}>
+      <h3>Generated credentials</h3>
+      <ul className="pair-list">
+        {credentials.map((c) => (
+          <li key={c.username}>
+            <span>
+              {c.username}: <strong>{c.password}</strong>
+            </span>
+          </li>
+        ))}
+      </ul>
+      <button className="btn btn-secondary btn-sm" onClick={onDismiss}>
+        Dismiss
+      </button>
+    </div>
+  );
 }
 
 function AddMemberForm({ onCreate, locations }) {
@@ -133,19 +161,17 @@ function AddMemberForm({ onCreate, locations }) {
   );
 }
 
-function ManageMembershipModal({ member, onClose, onEdit, onRenew, onResetPassword, history, locations }) {
+function EditMemberForm({ member, locations, onSave, onCancel }) {
   const [phone, setPhone] = useState(member.phone_number || "");
   const [expiresAt, setExpiresAt] = useState(dateInputValue(member.expires_at));
   const [locationId, setLocationId] = useState(member.location_id);
-  const [renewPhone, setRenewPhone] = useState("");
-  const [renewLocationId, setRenewLocationId] = useState(member.location_id);
   const [error, setError] = useState(null);
 
-  async function handleSave(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
     setError(null);
     try {
-      await onEdit(member, {
+      await onSave(member.id, {
         phoneNumber: phone,
         expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
         locationId,
@@ -155,76 +181,73 @@ function ManageMembershipModal({ member, onClose, onEdit, onRenew, onResetPasswo
     }
   }
 
-  async function handleRenew(e) {
+  return (
+    <form onSubmit={handleSubmit} className="form">
+      <label>
+        Phone number
+        <input {...phoneInputProps(phone, setPhone)} required />
+      </label>
+      <PhonePreview digits={phone} />
+      <LocationSelect value={locationId} onChange={setLocationId} locations={locations} />
+      <label>
+        Expiration (blank = none)
+        <input type="date" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} />
+      </label>
+      {error && <p className="error">{error}</p>}
+      <div className="button-row">
+        <button type="submit" className="btn btn-primary btn-sm" disabled={phone.length !== 10}>
+          Save
+        </button>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function RenewMemberModal({ member, locations, onClose, onRenew }) {
+  const [phone, setPhone] = useState("");
+  const [locationId, setLocationId] = useState(member.location_id);
+  const [error, setError] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit(e) {
     e.preventDefault();
     setError(null);
+    setSubmitting(true);
     try {
-      await onRenew(member, renewPhone, renewLocationId);
+      await onRenew(member, phone, locationId);
+      onClose();
     } catch (err) {
       setError(err.message);
-    }
-  }
-
-  async function handleResetPassword() {
-    if (!window.confirm(`Reset ${member.display_name}'s password?`)) return;
-    setError(null);
-    try {
-      await onResetPassword(member);
-    } catch (err) {
-      setError(err.message);
+    } finally {
+      setSubmitting(false);
     }
   }
 
   return (
-    <Modal title={`Manage ${member.display_name}`} onClose={onClose}>
-      <p>
-        Status:{" "}
-        {member.status === "active" ? (
-          <Badge status="success">Active</Badge>
-        ) : (
-          <Badge status="neutral">Expired</Badge>
-        )}
-      </p>
-      <p style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
-        Password: <PasswordReveal password={member.password} />
-        <button type="button" className="btn btn-secondary btn-sm" onClick={handleResetPassword}>
-          Reset Password
+    <Modal title={`Renew ${member.display_name}`} onClose={onClose}>
+      <form onSubmit={handleSubmit} className="form">
+        <label>
+          Phone number
+          <input {...phoneInputProps(phone, setPhone)} required />
+        </label>
+        <PhonePreview digits={phone} />
+        <LocationSelect value={locationId} onChange={setLocationId} locations={locations} />
+        {error && <p className="error">{error}</p>}
+        <button type="submit" className="btn btn-primary" disabled={submitting || phone.length !== 10}>
+          {submitting ? "Renewing…" : "Renew membership"}
         </button>
-      </p>
-      <p>Valid at: {member.location_name || "All Locations"}</p>
+      </form>
+    </Modal>
+  );
+}
 
-      {member.status === "active" ? (
-        <form onSubmit={handleSave} className="form">
-          <label>
-            Phone number
-            <input {...phoneInputProps(phone, setPhone)} required />
-          </label>
-          <PhonePreview digits={phone} />
-          <LocationSelect value={locationId} onChange={setLocationId} locations={locations} />
-          <label>
-            Expiration (blank = none)
-            <input type="date" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} />
-          </label>
-          <button type="submit" className="btn btn-primary btn-sm" disabled={phone.length !== 10}>
-            Save
-          </button>
-        </form>
-      ) : (
-        <form onSubmit={handleRenew} className="form">
-          <label>
-            Renew with phone number
-            <input {...phoneInputProps(renewPhone, setRenewPhone)} required />
-          </label>
-          <PhonePreview digits={renewPhone} />
-          <LocationSelect value={renewLocationId} onChange={setRenewLocationId} locations={locations} />
-          <button type="submit" className="btn btn-primary btn-sm" disabled={renewPhone.length !== 10}>
-            Renew membership
-          </button>
-        </form>
-      )}
-      {error && <p className="error">{error}</p>}
-
-      <h4 style={{ marginTop: "var(--space-5)" }}>Membership periods</h4>
+function HistoryModal({ member, history, onClose }) {
+  return (
+    <Modal title={`${member.display_name} — History`} onClose={onClose}>
+      <h4>Membership periods</h4>
       <ul className="pair-list">
         {member.periods.map((p) => (
           <li key={p.id}>
@@ -254,15 +277,91 @@ function ManageMembershipModal({ member, onClose, onEdit, onRenew, onResetPasswo
   );
 }
 
+function MemberRow({ member, locations, onAction, onSave }) {
+  const [editing, setEditing] = useState(false);
+
+  if (editing) {
+    return (
+      <tr>
+        <td colSpan={7}>
+          <EditMemberForm
+            member={member}
+            locations={locations}
+            onSave={async (id, data) => {
+              await onSave(id, data);
+              setEditing(false);
+            }}
+            onCancel={() => setEditing(false)}
+          />
+        </td>
+      </tr>
+    );
+  }
+
+  return (
+    <tr>
+      <td>{member.display_name}</td>
+      <td>{formatPhone(member.phone_number)}</td>
+      <td>
+        <Badge status={STATUS_BADGE[member.status]}>{statusText(member)}</Badge>
+      </td>
+      <td>
+        <PasswordCell password={member.password} />
+      </td>
+      <td>{member.location_name || "All Locations"}</td>
+      <td>{new Date(member.member_since).toLocaleDateString()}</td>
+      <td>{member.expires_at ? new Date(member.expires_at).toLocaleDateString() : "No expiration"}</td>
+      <td>
+        <div className="row-actions">
+          {member.status === "active" ? (
+            <button className="btn btn-secondary btn-sm" onClick={() => setEditing(true)}>
+              Edit
+            </button>
+          ) : (
+            <button className="btn btn-secondary btn-sm" onClick={() => onAction("renew", member)}>
+              Renew
+            </button>
+          )}
+          <details className="actions-menu">
+            <summary aria-label="More actions">
+              <MoreHorizontal size={16} />
+            </summary>
+            <div className="actions-menu-list">
+              <button className="btn btn-ghost btn-sm" onClick={() => onAction("resetPassword", member)}>
+                Reset Password
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => onAction("history", member)}>
+                View History
+              </button>
+            </div>
+          </details>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+const SORTERS = {
+  name: (a, b) => a.display_name.localeCompare(b.display_name),
+  status: (a, b) => (a.status > b.status ? 1 : a.status < b.status ? -1 : 0),
+  since: (a, b) => new Date(b.member_since) - new Date(a.member_since),
+  expires: (a, b) => new Date(a.expires_at || 0) - new Date(b.expires_at || 0),
+};
+
 export default function MembershipPanel() {
   const { token } = useAuth();
   const { locations } = useFacility();
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [credentials, setCredentials] = useState([]);
+  const [error, setError] = useState(null);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [sortBy, setSortBy] = useState("name");
   const [addOpen, setAddOpen] = useState(false);
-  const [managingId, setManagingId] = useState(null);
-  const [managingHistory, setManagingHistory] = useState([]);
-  const [credential, setCredential] = useState(null);
+  const [renewingId, setRenewingId] = useState(null);
+  const [historyId, setHistoryId] = useState(null);
+  const [historyRows, setHistoryRows] = useState([]);
 
   async function refresh() {
     const data = await adminApi.listMemberships(token);
@@ -271,20 +370,36 @@ export default function MembershipPanel() {
   }
 
   useEffect(() => {
+    setLoading(true);
     refresh();
   }, []);
 
-  const sorted = useMemo(() => [...members].sort((a, b) => a.display_name.localeCompare(b.display_name)), [members]);
+  const visible = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return members
+      .filter((m) => {
+        if (statusFilter !== "all" && m.status !== statusFilter) return false;
+        if (!term) return true;
+        return (
+          m.display_name.toLowerCase().includes(term) ||
+          (m.username || "").toLowerCase().includes(term) ||
+          (m.phone_number || "").includes(term)
+        );
+      })
+      .sort(SORTERS[sortBy]);
+  }, [members, search, statusFilter, sortBy]);
 
   async function handleCreate({ username, phoneNumber, expiresAt, locationId }) {
     const payload = await adminApi.startMembership(token, { username, phoneNumber, expiresAt, locationId });
-    if (payload.password) setCredential({ username: payload.username, password: payload.password });
+    if (payload.password) {
+      setCredentials((c) => [...c, { username: payload.username, password: payload.password }]);
+    }
     setAddOpen(false);
     await refresh();
   }
 
-  async function handleEdit(member, { phoneNumber, expiresAt, locationId }) {
-    await adminApi.editMembership(token, member.id, { phoneNumber, expiresAt, locationId });
+  async function handleSave(memberId, data) {
+    await adminApi.editMembership(token, memberId, data);
     await refresh();
   }
 
@@ -294,39 +409,67 @@ export default function MembershipPanel() {
       phoneNumber,
       locationId,
     });
-    if (payload.password) setCredential({ username: payload.username, password: payload.password });
+    if (payload.password) {
+      setCredentials((c) => [...c, { username: payload.username, password: payload.password }]);
+    }
     await refresh();
   }
 
-  async function handleResetPassword(member) {
-    const payload = await adminApi.resetPassword(token, member.id);
-    setCredential({ username: payload.username, password: payload.password });
-    await refresh();
+  async function handleAction(action, member) {
+    setError(null);
+    try {
+      if (action === "resetPassword") {
+        if (!window.confirm(`Reset ${member.display_name}'s password?`)) return;
+        const payload = await adminApi.resetPassword(token, member.id);
+        setCredentials((c) => [...c, { username: payload.username, password: payload.password }]);
+        await refresh();
+      } else if (action === "renew") {
+        setRenewingId(member.id);
+      } else if (action === "history") {
+        setHistoryId(member.id);
+        const rows = await adminApi.getLoginHistory(token, { username: member.username });
+        setHistoryRows(rows.filter((r) => r.context === "member_check_in"));
+      }
+    } catch (err) {
+      setError(err.message);
+    }
   }
 
-  async function openManage(member) {
-    setManagingId(member.id);
-    const rows = await adminApi.getLoginHistory(token, { username: member.username });
-    setManagingHistory(rows.filter((r) => r.context === "member_check_in"));
-  }
-
-  const managingMember = members.find((m) => m.id === managingId);
+  const renewingMember = members.find((m) => m.id === renewingId);
+  const historyMember = members.find((m) => m.id === historyId);
 
   return (
     <div>
-      {credential && (
-        <div className="credential-reveal" style={{ marginBottom: "var(--space-4)" }}>
-          <h3>Generated credentials</h3>
-          <p>
-            {credential.username}: <strong>{credential.password}</strong>
-          </p>
-          <button className="btn btn-secondary btn-sm" onClick={() => setCredential(null)}>
-            Dismiss
-          </button>
-        </div>
-      )}
+      <CredentialBanner credentials={credentials} onDismiss={() => setCredentials([])} />
+      {error && <p className="error">{error}</p>}
 
       <div className="admin-toolbar">
+        <label>
+          Search
+          <input
+            placeholder="Name, username, or phone"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </label>
+        <label>
+          Status
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+            <option value="all">All</option>
+            <option value="active">Active</option>
+            <option value="expired">Expired</option>
+          </select>
+        </label>
+        <label>
+          Sort
+          <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+            <option value="name">Name</option>
+            <option value="status">Status</option>
+            <option value="since">Member Since</option>
+            <option value="expires">Expires</option>
+          </select>
+        </label>
+        <span className="spacer" />
         <button className="btn btn-primary" onClick={() => setAddOpen(true)}>
           <Plus size={15} />
           Add Member
@@ -335,8 +478,8 @@ export default function MembershipPanel() {
 
       {loading ? (
         <p className="loading-state">Loading members…</p>
-      ) : sorted.length === 0 ? (
-        <p className="empty-state">No members yet.</p>
+      ) : visible.length === 0 ? (
+        <p className="empty-state">No members match these filters.</p>
       ) : (
         <div className="table-wrap">
           <table className="table">
@@ -353,29 +496,14 @@ export default function MembershipPanel() {
               </tr>
             </thead>
             <tbody>
-              {sorted.map((member) => (
-                <tr key={member.id}>
-                  <td>{member.display_name}</td>
-                  <td>{formatPhone(member.phone_number)}</td>
-                  <td>
-                    {member.status === "active" ? (
-                      <Badge status="success">Active</Badge>
-                    ) : (
-                      <Badge status="neutral">Expired</Badge>
-                    )}
-                  </td>
-                  <td>
-                    <PasswordReveal password={member.password} />
-                  </td>
-                  <td>{member.location_name || "All Locations"}</td>
-                  <td>{new Date(member.member_since).toLocaleDateString()}</td>
-                  <td>{member.expires_at ? new Date(member.expires_at).toLocaleDateString() : "No expiration"}</td>
-                  <td>
-                    <button className="btn btn-secondary btn-sm" onClick={() => openManage(member)}>
-                      Manage
-                    </button>
-                  </td>
-                </tr>
+              {visible.map((member) => (
+                <MemberRow
+                  key={member.id}
+                  member={member}
+                  locations={locations}
+                  onAction={handleAction}
+                  onSave={handleSave}
+                />
               ))}
             </tbody>
           </table>
@@ -388,15 +516,20 @@ export default function MembershipPanel() {
         </Modal>
       )}
 
-      {managingMember && (
-        <ManageMembershipModal
-          member={managingMember}
-          history={managingHistory}
-          onClose={() => setManagingId(null)}
-          onEdit={handleEdit}
-          onRenew={handleRenew}
-          onResetPassword={handleResetPassword}
+      {renewingMember && (
+        <RenewMemberModal
+          member={renewingMember}
           locations={locations}
+          onClose={() => setRenewingId(null)}
+          onRenew={handleRenew}
+        />
+      )}
+
+      {historyMember && (
+        <HistoryModal
+          member={historyMember}
+          history={historyRows}
+          onClose={() => setHistoryId(null)}
         />
       )}
     </div>

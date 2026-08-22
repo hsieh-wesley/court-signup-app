@@ -483,3 +483,32 @@ def test_admin_can_reset_a_members_password():
     assert services.verify_credential("kate", second)
     with pytest.raises(services.ServiceError):
         services.verify_credential("kate", first)
+
+
+# A member's password is always animal-only (no digit suffix), matching
+# member_check_in -- regardless of which action regenerates it.
+def test_reset_password_for_an_active_member_has_no_digits():
+    admin_services.start_membership("kate", "5551230099")
+    player = Player.objects.get(user__username="kate")
+
+    for _ in range(20):
+        plaintext = admin_services.reset_password(player)
+        assert plaintext.isalpha(), f"{plaintext!r} should be animal-only, no digits"
+
+
+def test_reset_password_for_a_non_member_still_has_digit_suffix():
+    player, _plaintext = admin_services.create_player("Alice", username="alice", enable_login=True)
+    plaintext = admin_services.reset_password(player)
+    assert not plaintext.isalpha(), f"{plaintext!r} should still be animal+digits for a non-member"
+
+
+def test_reset_password_for_a_lapsed_member_uses_the_non_member_scheme():
+    _player, membership, _plaintext = admin_services.start_membership(
+        "kate", "5551230099", expires_at=timezone.now() - datetime.timedelta(days=1)
+    )
+    player = Player.objects.get(user__username="kate")
+    # No longer an ACTIVE member (lapsed), so the animal-only scheme no
+    # longer applies -- same distinction validate_new_username already
+    # draws between "ever a member" and "currently an active member".
+    plaintext = admin_services.reset_password(player)
+    assert not plaintext.isalpha()

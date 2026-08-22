@@ -19,7 +19,12 @@ from .models import (
     QueueEntry,
     StaffCredential,
 )
-from .password_gen import generate_admin_password, generate_password, generate_unique_passwords
+from .password_gen import (
+    generate_admin_password,
+    generate_member_password,
+    generate_password,
+    generate_unique_passwords,
+)
 from .services import ServiceError, _end_pair, validate_new_username
 
 User = get_user_model()
@@ -103,9 +108,15 @@ def disable_login(player):
 
 
 def reset_password(player):
+    """A currently-active member always gets the animal-only scheme
+    (matching member_check_in), regardless of which action triggered the
+    regeneration — never the animal+digits scheme guests/non-members
+    get. Membership status, not which button was clicked, decides the
+    scheme, so this stays correct even if reset is triggered from
+    somewhere other than the Membership panel."""
     if player.user is None:
         raise ServiceError("This player has no login access.")
-    plaintext = generate_password()
+    plaintext = generate_member_password() if active_membership(player) is not None else generate_password()
     player.user.set_password(plaintext)
     player.user.save()
     PlayerSession.objects.filter(user=player.user).delete()
