@@ -227,7 +227,7 @@ function RenewMemberModal({ member, locations, onClose, onRenew }) {
   }
 
   return (
-    <Modal title={`Renew ${member.display_name}`} onClose={onClose}>
+    <Modal title={`Renew @${member.username}`} onClose={onClose}>
       <form onSubmit={handleSubmit} className="form">
         <label>
           Phone number
@@ -246,7 +246,7 @@ function RenewMemberModal({ member, locations, onClose, onRenew }) {
 
 function HistoryModal({ member, history, onClose }) {
   return (
-    <Modal title={`${member.display_name} — History`} onClose={onClose}>
+    <Modal title={`@${member.username} — History`} onClose={onClose}>
       <h4>Membership periods</h4>
       <ul className="pair-list">
         {member.periods.map((p) => (
@@ -300,7 +300,7 @@ function MemberRow({ member, locations, onAction, onSave }) {
 
   return (
     <tr>
-      <td>{member.display_name}</td>
+      <td>@{member.username}</td>
       <td>{formatPhone(member.phone_number)}</td>
       <td>
         <Badge status={STATUS_BADGE[member.status]}>{statusText(member)}</Badge>
@@ -419,7 +419,7 @@ export default function MembershipPanel() {
     setError(null);
     try {
       if (action === "resetPassword") {
-        if (!window.confirm(`Reset ${member.display_name}'s password?`)) return;
+        if (!window.confirm(`Reset @${member.username}'s password?`)) return;
         const payload = await adminApi.resetPassword(token, member.id);
         setCredentials((c) => [...c, { username: payload.username, password: payload.password }]);
         await refresh();
@@ -485,7 +485,7 @@ export default function MembershipPanel() {
           <table className="table">
             <thead>
               <tr>
-                <th>Name</th>
+                <th>Username</th>
                 <th>Phone</th>
                 <th>Status</th>
                 <th>Password</th>

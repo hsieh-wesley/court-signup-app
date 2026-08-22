@@ -176,7 +176,7 @@ function PlayerRow({ player, onAction, onSave, isSuperuser }) {
   if (editing) {
     return (
       <tr>
-        <td colSpan={8}>
+        <td colSpan={7}>
           <EditPlayerForm
             player={player}
             onSave={async (id, data) => {
@@ -194,11 +194,10 @@ function PlayerRow({ player, onAction, onSave, isSuperuser }) {
     <tr>
       <td>
         <span style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-          {player.display_name}
+          {player.username ? `@${player.username}` : player.display_name}
           {!player.is_active && <Badge status="neutral">Archived</Badge>}
         </span>
       </td>
-      <td>{player.username ? `@${player.username}` : "—"}</td>
       <td>
         <Badge status={STATUS_BADGE[player.status]}>{statusText(player)}</Badge>
       </td>
@@ -415,7 +414,6 @@ export default function UsersPanel({ locationId }) {
           <table className="table">
             <thead>
               <tr>
-                <th>Name</th>
                 <th>Username</th>
                 <th>Status</th>
                 <th>Login</th>
