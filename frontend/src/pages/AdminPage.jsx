@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { KeyRound } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Eye, EyeOff, KeyRound } from "lucide-react";
 import { useAuth } from "../AuthContext";
 import { ALL_LOCATIONS, useFacility } from "../LocationContext";
 import { adminApi } from "../apiClient";
@@ -17,14 +17,21 @@ const TABS = [
   { id: "history", label: "History" },
 ];
 
-// Admin-only (staff cannot reset its own password). Resets staff's
-// password in place and shows the new one once — it's never retrievable
-// again after this.
+// Viewing the staff account's current password is available to staff
+// (their own account) and admin alike; only admin/superuser can reset
+// it. There's no equivalent for the admin/superuser account itself —
+// that password is never generated/tracked by this app.
 function StaffAccountControl() {
-  const { token } = useAuth();
+  const { token, isSuperuser } = useAuth();
+  const [password, setPassword] = useState(null);
+  const [revealed, setRevealed] = useState(false);
   const [newPassword, setNewPassword] = useState(null);
   const [error, setError] = useState(null);
   const [resetting, setResetting] = useState(false);
+
+  useEffect(() => {
+    adminApi.getStaffCredential(token).then((data) => setPassword(data.password));
+  }, [token]);
 
   async function handleReset() {
     if (!window.confirm("Reset the staff account's password? This signs staff out everywhere.")) return;
@@ -33,6 +40,8 @@ function StaffAccountControl() {
     try {
       const data = await adminApi.resetStaffPassword(token);
       setNewPassword(data.password);
+      setPassword(data.password);
+      setRevealed(true);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -42,14 +51,29 @@ function StaffAccountControl() {
 
   return (
     <div className="admin-toolbar" style={{ marginBottom: "var(--space-5)" }}>
-      <button className="btn btn-secondary btn-sm" onClick={handleReset} disabled={resetting}>
-        <KeyRound size={14} />
-        {resetting ? "Resetting…" : "Reset Staff Password"}
-      </button>
-      {newPassword && (
-        <span className="badge badge-accent">
-          New staff password: <strong>{newPassword}</strong>
-        </span>
+      <span className="muted">
+        Staff password:{" "}
+        {password ? (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--space-2)" }}>
+            <code>{revealed ? password : "••••••••"}</code>
+            <button
+              type="button"
+              className="btn btn-ghost btn-icon btn-sm"
+              aria-label={revealed ? "Hide password" : "Show password"}
+              onClick={() => setRevealed((r) => !r)}
+            >
+              {revealed ? <EyeOff size={14} /> : <Eye size={14} />}
+            </button>
+          </span>
+        ) : (
+          "—"
+        )}
+      </span>
+      {isSuperuser && (
+        <button className="btn btn-secondary btn-sm" onClick={handleReset} disabled={resetting}>
+          <KeyRound size={14} />
+          {resetting ? "Resetting…" : "Reset Staff Password"}
+        </button>
       )}
       {newPassword && (
         <button className="btn btn-ghost btn-sm" onClick={() => setNewPassword(null)}>
@@ -63,7 +87,6 @@ function StaffAccountControl() {
 
 export default function AdminPage() {
   const [tab, setTab] = useState("users");
-  const { isSuperuser } = useAuth();
   const { locations, selectedLocationId, setSelectedLocationId } = useFacility();
   // Child panels only ever understand "a real location" or "no location
   // filter" (undefined) — none of them know about the "All Locations"
@@ -112,7 +135,7 @@ export default function AdminPage() {
         )}
       </div>
 
-      {isSuperuser && <StaffAccountControl />}
+      <StaffAccountControl />
 
       <div className="tabs">
         {TABS.map((t) => (

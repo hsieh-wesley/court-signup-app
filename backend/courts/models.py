@@ -33,6 +33,15 @@ class Player(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     is_active = models.BooleanField(default=True)
     expires_at = models.DateTimeField(null=True, blank=True)
+    # Kept in lockstep with auth.User's hashed password everywhere a
+    # plaintext password is (re)generated (see admin_services/services).
+    # Deliberate, explicit product decision: these are auto-generated
+    # credentials issued FOR the customer (not chosen by them), and
+    # admin/staff need to look one up if a customer forgets it, without
+    # forcing a reset that would change their working password. Blank for
+    # accounts created before this field existed, until their password is
+    # next (re)generated.
+    current_password_plaintext = models.CharField(max_length=100, blank=True, default="")
 
     def __str__(self):
         return self.display_name
@@ -305,3 +314,20 @@ class CourtActivityLog(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+
+
+class StaffCredential(models.Model):
+    """Persisted plaintext for a staff-tier (is_staff, non-superuser)
+    account's current password, so a staff session (and admin) can look
+    it up without a reset. Separate from Player -- staff/admin accounts
+    aren't Players. Only the shared "staff" account exists today, but this
+    is scoped to `user` (not a singleton) so a future multi-staff-account
+    model wouldn't need a redesign. Deliberately does not cover admin/
+    superuser accounts -- their password is never generated/tracked by
+    this app (set once via `createsuperuser`), so there's nothing to
+    persist or look up for them."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="staff_credential"
+    )
+    current_password_plaintext = models.CharField(max_length=100, blank=True, default="")

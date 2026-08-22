@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { MoreHorizontal, Plus } from "lucide-react";
+import { Eye, EyeOff, MoreHorizontal, Plus } from "lucide-react";
 import { useAuth } from "../../AuthContext";
 import { adminApi } from "../../apiClient";
 import Modal from "../../components/Modal";
@@ -149,13 +149,34 @@ function EditPlayerForm({ player, onSave, onCancel }) {
   );
 }
 
+// Hidden by default (a front-desk kiosk screen is often visible to
+// whoever's standing at the counter) — click to reveal without needing
+// Reset Password, which would invalidate the player's actual credential.
+function PasswordCell({ password }) {
+  const [revealed, setRevealed] = useState(false);
+  if (!password) return <span className="muted">—</span>;
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--space-2)" }}>
+      <code>{revealed ? password : "••••••••"}</code>
+      <button
+        type="button"
+        className="btn btn-ghost btn-icon btn-sm"
+        aria-label={revealed ? "Hide password" : "Show password"}
+        onClick={() => setRevealed((r) => !r)}
+      >
+        {revealed ? <EyeOff size={14} /> : <Eye size={14} />}
+      </button>
+    </span>
+  );
+}
+
 function PlayerRow({ player, onAction, onSave, isSuperuser }) {
   const [editing, setEditing] = useState(false);
 
   if (editing) {
     return (
       <tr>
-        <td colSpan={7}>
+        <td colSpan={8}>
           <EditPlayerForm
             player={player}
             onSave={async (id, data) => {
@@ -182,6 +203,9 @@ function PlayerRow({ player, onAction, onSave, isSuperuser }) {
         <Badge status={STATUS_BADGE[player.status]}>{statusText(player)}</Badge>
       </td>
       <td>{loginText(player)}</td>
+      <td>
+        <PasswordCell password={player.password} />
+      </td>
       <td>
         {player.checked_in_at
           ? new Date(player.checked_in_at).toLocaleTimeString([], {
@@ -395,6 +419,7 @@ export default function UsersPanel({ locationId }) {
                 <th>Username</th>
                 <th>Status</th>
                 <th>Login</th>
+                <th>Password</th>
                 <th>Checked In</th>
                 <th>Account Created</th>
                 <th>Actions</th>

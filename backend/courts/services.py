@@ -447,12 +447,13 @@ def validate_new_username(username, exclude_user_id=None):
 def member_check_in(phone_number, location):
     """Phone-only check-in for a member: no password. Draws a fresh
     animal-only password (invalidating whatever they had before), stamps
-    a MEMBER_CHECK_IN LoginLog row, and returns it once for display at
-    the kiosk — it is never stored anywhere in plaintext afterward, only
-    Django's hash. No PlayerSession/token is created — same stateless-
-    kiosk model as every other public action here. A membership scoped
-    to one specific facility (Membership.location) can only check in
-    there — "All Locations" (location=None) works everywhere."""
+    a MEMBER_CHECK_IN LoginLog row, and returns it for display at the
+    kiosk. Admin/staff can also look it up again later without another
+    check-in (Player.current_password_plaintext). No PlayerSession/token
+    is created — same stateless-kiosk model as every other public action
+    here. A membership scoped to one specific facility (Membership.
+    location) can only check in there — "All Locations" (location=None)
+    works everywhere."""
     membership = find_active_membership_by_phone(phone_number)
     if membership is None or membership.player.user is None:
         raise ServiceError("No member found with that phone number.")
@@ -463,6 +464,8 @@ def member_check_in(phone_number, location):
     plaintext = generate_member_password()
     user.set_password(plaintext)
     user.save()
+    membership.player.current_password_plaintext = plaintext
+    membership.player.save(update_fields=["current_password_plaintext"])
     activity_log.log_player_auth_event(user, location, LoginLog.Context.MEMBER_CHECK_IN)
     return user, plaintext
 

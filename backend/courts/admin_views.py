@@ -409,6 +409,20 @@ class AdminStaffResetPasswordView(APIView):
         return Response({"password": plaintext})
 
 
+class AdminStaffCredentialView(APIView):
+    """IsAdmin (not IsSuperUser) — unlike resetting, VIEWING the staff
+    account's current password is allowed for a staff-tier session too
+    (it's their own account's credential), not just admin. There's no
+    equivalent for the admin/superuser account itself: that password is
+    never generated or tracked by this app (set once via
+    `createsuperuser`), so there's nothing to look up for it."""
+
+    permission_classes = [IsAdmin]
+
+    def get(self, request):
+        return Response({"username": "staff", "password": admin_services.get_staff_password()})
+
+
 class AdminMembershipListCreateView(APIView):
     """POST also renews a lapsed member: pass their existing username and
     admin_services.start_membership reuses that Player/User rather than

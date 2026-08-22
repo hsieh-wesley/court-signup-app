@@ -1,6 +1,8 @@
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 
+from courts.models import StaffCredential
+
 User = get_user_model()
 
 DEFAULT_STAFF_PASSWORD = "staffpass123"
@@ -24,6 +26,9 @@ class Command(BaseCommand):
             user.is_staff = True
             user.is_superuser = False
             user.save()
+            StaffCredential.objects.update_or_create(
+                user=user, defaults={"current_password_plaintext": DEFAULT_STAFF_PASSWORD}
+            )
             self.stdout.write(f"staff: created with password {DEFAULT_STAFF_PASSWORD}")
         else:
             self.stdout.write("staff: already exists, password left untouched")

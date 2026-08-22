@@ -17,6 +17,7 @@ from .models import (
     Player,
     PlayerSession,
     QueueEntry,
+    StaffCredential,
 )
 from .password_gen import generate_admin_password, generate_password, generate_unique_passwords
 from .services import ServiceError, _end_pair, validate_new_username
@@ -46,7 +47,9 @@ def create_player(display_name, username=None, enable_login=False):
         if enable_login:
             plaintext = generate_password()
             user = User.objects.create_user(username=username, password=plaintext)
-        player = Player.objects.create(display_name=display_name, user=user)
+        player = Player.objects.create(
+            display_name=display_name, user=user, current_password_plaintext=plaintext or ""
+        )
 
     return player, plaintext
 
@@ -78,12 +81,15 @@ def add_login(player, username):
         user.set_password(plaintext)
         user.save()
         PlayerSession.objects.filter(user=user).delete()
+        player.current_password_plaintext = plaintext
+        player.save(update_fields=["current_password_plaintext"])
         return plaintext
 
     validate_new_username(username)
     plaintext = generate_password()
     user = User.objects.create_user(username=username, password=plaintext)
     player.user = user
+    player.current_password_plaintext = plaintext
     player.save()
     return plaintext
 
@@ -103,6 +109,8 @@ def reset_password(player):
     player.user.set_password(plaintext)
     player.user.save()
     PlayerSession.objects.filter(user=player.user).delete()
+    player.current_password_plaintext = plaintext
+    player.save(update_fields=["current_password_plaintext"])
     return plaintext
 
 
@@ -205,7 +213,9 @@ def start_membership(username, phone_number, starts_at=None, expires_at=None, lo
         validate_new_username(username)
         plaintext = generate_password()
         user = User.objects.create_user(username=username, password=plaintext)
-        player = Player.objects.create(display_name=username, user=user)
+        player = Player.objects.create(
+            display_name=username, user=user, current_password_plaintext=plaintext
+        )
 
     if phone_conflict is not None and phone_conflict.player_id != player.id:
         raise ServiceError("That phone number is already active for another member.")
@@ -257,8 +267,9 @@ def reset_staff_password():
     """Admin-only (enforced at the view layer). In place, no account
     recreation — a fresh secure password replaces the old one via the
     normal Django hashing (set_password), and any existing staff
-    PlayerSession is invalidated immediately. The plaintext is returned
-    once for display and never stored or retrievable again afterward."""
+    PlayerSession is invalidated immediately. Also kept viewable via
+    StaffCredential (see get_staff_password) so a staff session — or
+    admin — can look it up again later without another reset."""
     try:
         staff = User.objects.get(username="staff")
     except User.DoesNotExist:
@@ -267,7 +278,20 @@ def reset_staff_password():
     staff.set_password(plaintext)
     staff.save()
     PlayerSession.objects.filter(user=staff).delete()
+    StaffCredential.objects.update_or_create(
+        user=staff, defaults={"current_password_plaintext": plaintext}
+    )
     return plaintext
+
+
+def get_staff_password():
+    """The staff account's current viewable password, or None if it's
+    never been set through reset_staff_password (e.g. right after
+    seed_staff_account, before any reset)."""
+    try:
+        return StaffCredential.objects.get(user__username="staff").current_password_plaintext or None
+    except StaffCredential.DoesNotExist:
+        return None
 
 
 def create_test_players(n=8):
@@ -288,14 +312,19 @@ def create_test_players(n=8):
             PlayerSession.objects.filter(user=user).delete()
             player = getattr(user, "player", None)
             if player is None:
-                player = Player.objects.create(user=user, display_name=display_name)
+                player = Player.objects.create(
+                    user=user, display_name=display_name, current_password_plaintext=plaintext
+                )
             else:
                 player.is_active = True
                 player.display_name = display_name
+                player.current_password_plaintext = plaintext
                 player.save()
         except User.DoesNotExist:
             user = User.objects.create_user(username=username, password=plaintext)
-            Player.objects.create(user=user, display_name=display_name)
+            Player.objects.create(
+                user=user, display_name=display_name, current_password_plaintext=plaintext
+            )
         results.append(
             {"username": username, "password": plaintext, "display_name": display_name}
         )

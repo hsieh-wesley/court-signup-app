@@ -190,4 +190,6 @@ export const adminApi = {
   // Admin/superuser-only — staff cannot call this on itself.
   resetStaffPassword: (token) =>
     request("/admin/staff/reset-password/", { method: "POST", token }),
+  // Viewing (unlike resetting) is allowed for a staff-tier session too.
+  getStaffCredential: (token) => request("/admin/staff/credential/", { token }),
 };

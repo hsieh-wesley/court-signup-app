@@ -131,59 +131,52 @@ def test_location_counts_match_player_statuses():
     assert row["waiting_room_count"] == 1  # erin only
 
 
-# No persisted plaintext password anywhere: reset/add-login return a
-# fresh password once, invalidate the old one, and nothing about it is
-# retrievable afterward -- only Django's hash is ever stored.
-def test_reset_password_invalidates_the_old_one_and_returns_a_fresh_one():
+# Admin/staff can view a player's current password without resetting it.
+def test_create_player_password_is_immediately_viewable():
+    player, plaintext = admin_services.create_player("Alice", username="alice", enable_login=True)
+    player.refresh_from_db()
+    assert player.current_password_plaintext == plaintext
+
+
+def test_reset_password_updates_the_viewable_password():
     player, first = admin_services.create_player("Alice", username="alice", enable_login=True)
-    assert services.verify_credential("alice", first)
-
     second = admin_services.reset_password(player)
-
+    player.refresh_from_db()
     assert second != first
-    with pytest.raises(services.ServiceError):
-        services.verify_credential("alice", first)
-    assert services.verify_credential("alice", second)
+    assert player.current_password_plaintext == second
 
 
-def test_add_login_returns_a_fresh_password_each_call():
+def test_add_login_stores_viewable_password_for_new_and_existing_player():
     player, _ = admin_services.create_player("Alice", enable_login=False)
     first = admin_services.add_login(player, "alice")
-    assert services.verify_credential("alice", first)
+    player.refresh_from_db()
+    assert player.current_password_plaintext == first
 
     second = admin_services.add_login(player, "alice")
+    player.refresh_from_db()
     assert second != first
-    with pytest.raises(services.ServiceError):
-        services.verify_credential("alice", first)
-    assert services.verify_credential("alice", second)
+    assert player.current_password_plaintext == second
 
 
-def test_admin_players_endpoint_never_exposes_a_password_field():
+def test_admin_players_endpoint_exposes_password_to_staff_and_admin():
     admin_services.create_player("Alice", username="alice", enable_login=True)
+    player = Player.objects.get(display_name="Alice")
 
     for is_superuser in (False, True):
         client = authed_client(make_admin_user(f"acct{is_superuser}", is_superuser=is_superuser))
         resp = client.get("/api/admin/players/")
         assert resp.status_code == 200
         row = next(r for r in resp.data if r["username"] == "alice")
-        assert "password" not in row
+        assert row["password"] == player.current_password_plaintext
 
 
-def test_create_player_response_reveals_password_once():
+def test_admin_players_endpoint_reports_null_password_for_guest_with_no_login():
+    admin_services.create_player("Guest Only", enable_login=False)
     admin = make_admin_user()
     client = authed_client(admin)
-    resp = client.post(
-        "/api/admin/players/",
-        {"display_name": "Grace", "username": "grace", "enable_login": True},
-        format="json",
-    )
-    assert resp.status_code == 201
-    assert resp.data["password"]
-
-    # But a later fetch of the same player never exposes it again.
-    resp2 = client.get("/api/admin/players/")
-    row = next(r for r in resp2.data if r["username"] == "grace")
-    assert "password" not in row
+    resp = client.get("/api/admin/players/")
+    row = next(r for r in resp.data if r["display_name"] == "Guest Only")
+    assert row["password"] is None
 
 
 # Delete Player: only a non-member with zero court/queue activity is

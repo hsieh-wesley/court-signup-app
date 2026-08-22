@@ -83,6 +83,11 @@ urlpatterns = [
         name="admin-staff-reset-password",
     ),
     path(
+        "staff/credential/",
+        views.AdminStaffCredentialView.as_view(),
+        name="admin-staff-credential",
+    ),
+    path(
         "memberships/",
         views.AdminMembershipListCreateView.as_view(),
         name="admin-membership-list-create",

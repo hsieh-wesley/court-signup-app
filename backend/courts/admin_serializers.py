@@ -18,6 +18,7 @@ class AdminPlayerSerializer(serializers.ModelSerializer):
     username = serializers.SerializerMethodField()
     has_login = serializers.ReadOnlyField()
     login_active = serializers.SerializerMethodField()
+    password = serializers.SerializerMethodField()
     current_assignment = serializers.SerializerMethodField()
     status = serializers.SerializerMethodField()
     court_number = serializers.SerializerMethodField()
@@ -32,6 +33,7 @@ class AdminPlayerSerializer(serializers.ModelSerializer):
             "username",
             "has_login",
             "login_active",
+            "password",
             "is_active",
             "created_at",
             "current_assignment",
@@ -43,6 +45,9 @@ class AdminPlayerSerializer(serializers.ModelSerializer):
 
     def get_username(self, player):
         return player.user.username if player.user else None
+
+    def get_password(self, player):
+        return player.current_password_plaintext or None
 
     def get_can_delete(self, player):
         from . import admin_services
@@ -173,6 +178,7 @@ class AdminMembershipSerializer(serializers.ModelSerializer):
     member_since = serializers.SerializerMethodField()
     expires_at = serializers.SerializerMethodField()
     periods = serializers.SerializerMethodField()
+    password = serializers.SerializerMethodField()
     location_id = serializers.SerializerMethodField()
     location_name = serializers.SerializerMethodField()
 
@@ -180,7 +186,7 @@ class AdminMembershipSerializer(serializers.ModelSerializer):
         model = Player
         fields = [
             "id", "display_name", "username", "phone_number", "status",
-            "member_since", "expires_at", "periods",
+            "member_since", "expires_at", "periods", "password",
             "location_id", "location_name",
         ]
 
@@ -189,6 +195,9 @@ class AdminMembershipSerializer(serializers.ModelSerializer):
 
     def get_username(self, player):
         return player.user.username if player.user else None
+
+    def get_password(self, player):
+        return player.current_password_plaintext or None
 
     def get_phone_number(self, player):
         latest = self._latest(player)

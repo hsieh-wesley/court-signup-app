@@ -52,17 +52,19 @@ def test_admin_can_create_player():
     assert resp.data["username"] == "grace"
 
 
-def test_admin_players_list_never_exposes_a_password_or_the_hash():
-    """No persisted plaintext password exists anywhere in this app -- the
-    list endpoint exposes neither a retrievable plaintext nor the
-    underlying auth.User hash. The only way to see a password is a fresh
-    generate/reset, returned once in that response only."""
+def test_admin_players_list_exposes_viewable_plaintext_but_never_the_hash():
+    """`password` is a deliberate, current-plaintext field (see
+    Player.current_password_plaintext) admin/staff can view without a
+    reset -- but the underlying auth.User hash must never leak alongside
+    it."""
     admin = make_admin_user()
-    make_user("alice")
+    alice = make_user("alice")
     client = authed_client(admin)
     resp = client.get("/api/admin/players/")
     row = resp.data[0]
-    assert "password" not in row
+    assert row["password"] == "pw12345"  # make_user's known plaintext
+    assert row["password"] != alice.password  # never the hashed value
+    assert not row["password"].startswith("pbkdf2_")
 
 
 def test_login_response_reports_is_staff():

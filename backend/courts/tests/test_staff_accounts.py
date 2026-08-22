@@ -130,3 +130,57 @@ def test_seed_staff_account_creates_with_default_password():
     user = services.verify_credential("staff", "staffpass123")
     assert user.is_staff
     assert not user.is_superuser
+
+
+# The staff account's current password is viewable by staff (their own
+# account) and admin, without needing a reset -- unlike the reset action
+# itself, which stays admin/superuser-only.
+def test_seed_staff_account_makes_password_immediately_viewable():
+    call_command("seed_staff_account")
+    staff = User.objects.get(username="staff")
+    client = authed_client(staff)
+
+    resp = client.get("/api/admin/staff/credential/")
+    assert resp.status_code == 200
+    assert resp.data["password"] == "staffpass123"
+
+
+def test_reset_staff_password_updates_the_viewable_password():
+    call_command("seed_staff_account")
+    new_password = admin_services.reset_staff_password()
+    staff = User.objects.get(username="staff")
+    client = authed_client(staff)
+
+    resp = client.get("/api/admin/staff/credential/")
+    assert resp.status_code == 200
+    assert resp.data["password"] == new_password
+
+
+def test_admin_can_also_view_staff_password():
+    call_command("seed_staff_account")
+    admin = make_admin_user("admin")
+    client = authed_client(admin)
+
+    resp = client.get("/api/admin/staff/credential/")
+    assert resp.status_code == 200
+    assert resp.data["password"] == "staffpass123"
+
+
+def test_unauthenticated_cannot_view_staff_password():
+    from rest_framework.test import APIClient
+
+    client = APIClient()
+    resp = client.get("/api/admin/staff/credential/")
+    assert resp.status_code in (401, 403)
+
+
+def test_staff_credential_reports_null_before_any_password_is_set():
+    # An account that was never created through seed_staff_account/
+    # reset_staff_password (so StaffCredential was never synced).
+    User.objects.create_user(username="staff", password="whatever", is_staff=True)
+    admin = make_admin_user("admin")
+    client = authed_client(admin)
+
+    resp = client.get("/api/admin/staff/credential/")
+    assert resp.status_code == 200
+    assert resp.data["password"] is None

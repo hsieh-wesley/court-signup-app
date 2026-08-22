@@ -299,27 +299,36 @@ def test_admin_membership_patch_edits_current_period():
 # No persisted plaintext password for members either: a fresh
 # start_membership/member_check_in password works immediately, and the
 # memberships list endpoint never exposes any password field.
-def test_start_membership_new_account_password_works_immediately():
-    _player, _membership, plaintext = admin_services.start_membership("kate", "5551230099")
-    assert services.verify_credential("kate", plaintext)
+def test_start_membership_new_account_password_is_immediately_viewable():
+    from courts.models import Player
+
+    player_before, _membership, plaintext = admin_services.start_membership("kate", "5551230099")
+    player = Player.objects.get(pk=player_before.pk)
+    assert player.current_password_plaintext == plaintext
 
 
-def test_member_check_in_returns_a_working_password_each_time():
+def test_member_check_in_updates_the_viewable_password():
+    from courts.models import Player
+
     court = make_court()
     admin_services.start_membership("kate", "5551230099")
     _user, plaintext = services.member_check_in("5551230099", court.location)
-    assert services.verify_credential("kate", plaintext)
+    player = Player.objects.get(user__username="kate")
+    assert player.current_password_plaintext == plaintext
 
 
-def test_admin_memberships_endpoint_never_exposes_a_password_field():
+def test_admin_memberships_endpoint_exposes_password_to_staff_and_admin():
+    from courts.models import Player
+
     admin_services.start_membership("kate", "5551230099")
+    player = Player.objects.get(user__username="kate")
 
     for is_superuser in (False, True):
         client = authed_client(make_admin_user(f"macct{is_superuser}", is_superuser=is_superuser))
         resp = client.get("/api/admin/memberships/")
         assert resp.status_code == 200
         row = next(r for r in resp.data if r["username"] == "kate")
-        assert "password" not in row
+        assert row["password"] == player.current_password_plaintext
 
 
 # Membership location scoping: a period can be tied to one specific
