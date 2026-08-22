@@ -152,7 +152,7 @@ export default function AdminPage() {
       {tab === "users" && <UsersPanel locationId={panelLocationId} />}
       {tab === "courts" && <CourtsPanel locationId={panelLocationId} />}
       {tab === "locations" && <LocationsPanel />}
-      {tab === "membership" && <MembershipPanel />}
+      {tab === "membership" && <MembershipPanel locationId={panelLocationId} />}
       {tab === "history" && <HistoryPanel locationId={panelLocationId} />}
     </div>
   );

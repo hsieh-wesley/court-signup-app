@@ -437,7 +437,9 @@ class AdminMembershipListCreateView(APIView):
             .select_related("user")
             .order_by("display_name")
         )
-        return Response(AdminMembershipSerializer(players, many=True).data)
+        location_id = request.query_params.get("location_id")
+        context = {"assignments": _assignment_map(), "checkins": _checkin_map(location_id)}
+        return Response(AdminMembershipSerializer(players, many=True, context=context).data)
 
     def post(self, request):
         serializer = AdminMembershipCreateSerializer(data=request.data)

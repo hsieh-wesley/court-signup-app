@@ -6,13 +6,44 @@ import { adminApi } from "../../apiClient";
 import Modal from "../../components/Modal";
 import Badge from "../../components/Badge";
 
-const STATUS_BADGE = {
+// Membership status (active/expired) — whether their current period is
+// still valid. Separate from CourtStatus below (physical presence
+// today), which is a different concept even though both used to be
+// called "Status" in this panel.
+const MEMBERSHIP_BADGE = {
   active: "success",
   expired: "neutral",
 };
 
-function statusText(member) {
+function membershipStatusText(member) {
   return member.status === "active" ? "Active" : "Expired";
+}
+
+// Physical court presence today — matches UsersPanel's Status column
+// exactly (same field names/values from the backend).
+const COURT_STATUS_LABELS = {
+  on_court: "On Court",
+  in_queue: "In Queue",
+  waiting_room: "Waiting Room",
+  not_checked_in: "Not Checked In",
+};
+
+const COURT_STATUS_BADGE = {
+  on_court: "accent",
+  in_queue: "warning",
+  waiting_room: "success",
+  not_checked_in: "neutral",
+};
+
+function courtStatusText(member) {
+  const label = COURT_STATUS_LABELS[member.court_status] || member.court_status;
+  if (member.court_status === "on_court" && member.court_number != null) {
+    return `On Court ${member.court_number}`;
+  }
+  if (member.court_status === "in_queue" && member.court_number != null) {
+    return `In Queue · Court ${member.court_number}`;
+  }
+  return label;
 }
 
 function formatPhone(digits) {
@@ -283,7 +314,7 @@ function MemberRow({ member, locations, onAction, onSave }) {
   if (editing) {
     return (
       <tr>
-        <td colSpan={7}>
+        <td colSpan={8}>
           <EditMemberForm
             member={member}
             locations={locations}
@@ -303,7 +334,10 @@ function MemberRow({ member, locations, onAction, onSave }) {
       <td>@{member.username}</td>
       <td>{formatPhone(member.phone_number)}</td>
       <td>
-        <Badge status={STATUS_BADGE[member.status]}>{statusText(member)}</Badge>
+        <Badge status={COURT_STATUS_BADGE[member.court_status]}>{courtStatusText(member)}</Badge>
+      </td>
+      <td>
+        <Badge status={MEMBERSHIP_BADGE[member.status]}>{membershipStatusText(member)}</Badge>
       </td>
       <td>
         <PasswordCell password={member.password} />
@@ -348,7 +382,7 @@ const SORTERS = {
   expires: (a, b) => new Date(a.expires_at || 0) - new Date(b.expires_at || 0),
 };
 
-export default function MembershipPanel() {
+export default function MembershipPanel({ locationId }) {
   const { token } = useAuth();
   const { locations } = useFacility();
   const [members, setMembers] = useState([]);
@@ -364,7 +398,7 @@ export default function MembershipPanel() {
   const [historyRows, setHistoryRows] = useState([]);
 
   async function refresh() {
-    const data = await adminApi.listMemberships(token);
+    const data = await adminApi.listMemberships(token, locationId);
     setMembers(data);
     setLoading(false);
   }
@@ -372,7 +406,7 @@ export default function MembershipPanel() {
   useEffect(() => {
     setLoading(true);
     refresh();
-  }, []);
+  }, [locationId]);
 
   const visible = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -488,6 +522,7 @@ export default function MembershipPanel() {
                 <th>Username</th>
                 <th>Phone</th>
                 <th>Status</th>
+                <th>Membership</th>
                 <th>Password</th>
                 <th>Location</th>
                 <th>Member Since</th>

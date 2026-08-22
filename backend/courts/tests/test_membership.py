@@ -520,3 +520,34 @@ def test_reset_password_for_a_lapsed_member_uses_the_non_member_scheme():
     # draws between "ever a member" and "currently an active member".
     plaintext = admin_services.reset_password(player)
     assert not plaintext.isalpha()
+
+
+# Membership panel gains its own court-presence field, kept separate
+# from the active/expired membership `status` so the two are never
+# confused (a member can be "active" and "not_checked_in" at once, or
+# any other combination).
+def test_admin_membership_list_shows_not_checked_in_by_default():
+    admin_services.start_membership("kate", "5551230099")
+    admin = make_admin_user()
+    client = authed_client(admin)
+
+    resp = client.get("/api/admin/memberships/")
+    row = next(r for r in resp.data if r["username"] == "kate")
+    assert row["court_status"] == "not_checked_in"
+    assert row["court_number"] is None
+    assert row["status"] == "active"  # unaffected, still membership status
+
+
+def test_admin_membership_list_shows_on_court_after_sign_up():
+    court = make_court(number=1)
+    admin_services.start_membership("kate", "5551230099")
+    kate = Player.objects.get(user__username="kate").user
+    make_user("partner")
+    services.create_queue_entry(court=court, pairs=[["kate", "partner"]], created_by=kate)
+
+    admin = make_admin_user()
+    client = authed_client(admin)
+    resp = client.get("/api/admin/memberships/")
+    row = next(r for r in resp.data if r["username"] == "kate")
+    assert row["court_status"] == "on_court"
+    assert row["court_number"] == 1

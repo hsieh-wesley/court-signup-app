@@ -163,7 +163,8 @@ export const adminApi = {
     request(`/admin/history/logins/${qs(filters)}`, { token }),
   getCourtActivityHistory: (token, filters) =>
     request(`/admin/history/court-activity/${qs(filters)}`, { token }),
-  listMemberships: (token) => request("/admin/memberships/", { token }),
+  listMemberships: (token, locationId) =>
+    request(`/admin/memberships/${qs({ location_id: locationId })}`, { token }),
   // Also used to renew a lapsed member — pass their existing username and
   // the backend reuses that account rather than creating a duplicate.
   startMembership: (token, { username, phoneNumber, expiresAt, locationId }) =>

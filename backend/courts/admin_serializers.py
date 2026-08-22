@@ -167,10 +167,19 @@ class AdminMembershipSerializer(serializers.ModelSerializer):
     """One row per Player who has ever had a Membership — `phone_number`/
     `member_since`/`expires_at` reflect the current-or-most-recent period;
     `periods` lists every past period for the Manage modal's history view.
-    `status` is derived fresh every request (never stored) from whether an
-    active Membership row currently covers `now()` — entirely separate
-    from the immutable `membership_status` snapshots on LoginLog/
-    CourtActivityLog, which reflect the past, not now."""
+    `status` (active/expired) is derived fresh every request (never
+    stored) from whether an active Membership row currently covers
+    `now()` — entirely separate from the immutable `membership_status`
+    snapshots on LoginLog/CourtActivityLog, which reflect the past, not
+    now. `court_status`/`court_number`/`checked_in_at` are a SEPARATE
+    concept — physical presence today (on_court/in_queue/waiting_room/
+    not_checked_in), computed identically to AdminPlayerSerializer's
+    `status`/`court_number`/`checked_in_at` via the same `assignments`/
+    `checkins` context maps the view builds once per request. Kept under
+    a different field name specifically so it's never confused with
+    membership status — a member can be "active" (membership) and
+    "not_checked_in" (court presence) at the same time, or any other
+    combination."""
 
     username = serializers.SerializerMethodField()
     phone_number = serializers.SerializerMethodField()
@@ -181,6 +190,9 @@ class AdminMembershipSerializer(serializers.ModelSerializer):
     password = serializers.SerializerMethodField()
     location_id = serializers.SerializerMethodField()
     location_name = serializers.SerializerMethodField()
+    court_status = serializers.SerializerMethodField()
+    court_number = serializers.SerializerMethodField()
+    checked_in_at = serializers.SerializerMethodField()
 
     class Meta:
         model = Player
@@ -188,6 +200,7 @@ class AdminMembershipSerializer(serializers.ModelSerializer):
             "id", "display_name", "username", "phone_number", "status",
             "member_since", "expires_at", "periods", "password",
             "location_id", "location_name",
+            "court_status", "court_number", "checked_in_at",
         ]
 
     def _latest(self, player):
@@ -205,6 +218,29 @@ class AdminMembershipSerializer(serializers.ModelSerializer):
 
     def get_status(self, player):
         return "active" if active_membership(player) is not None else "expired"
+
+    def _assignment(self, player):
+        if player.user_id is None:
+            return None
+        return self.context.get("assignments", {}).get(player.user_id)
+
+    def get_court_status(self, player):
+        if player.user_id is None:
+            return "not_checked_in"
+        assignment = self._assignment(player)
+        if assignment:
+            return "on_court" if assignment["status"] == QueueEntry.Status.ACTIVE else "in_queue"
+        checked_in = player.user_id in self.context.get("checkins", {})
+        return "waiting_room" if checked_in else "not_checked_in"
+
+    def get_court_number(self, player):
+        assignment = self._assignment(player)
+        return assignment["court_number"] if assignment else None
+
+    def get_checked_in_at(self, player):
+        if player.user_id is None:
+            return None
+        return self.context.get("checkins", {}).get(player.user_id)
 
     def get_member_since(self, player):
         latest = self._latest(player)
