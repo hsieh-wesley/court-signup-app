@@ -25,7 +25,18 @@ from .password_gen import (
     generate_password,
     generate_unique_passwords,
 )
-from .services import ServiceError, _end_pair, validate_new_username
+from .services import (
+    ServiceError,
+    _check_not_expired,
+    _conflicting_usernames,
+    _end_pair,
+    _promote_next_if_free,
+    _reject_if_active_elsewhere,
+    create_queue_entry,
+    has_facility_presence_today,
+    join_open_slot,
+    validate_new_username,
+)
 
 User = get_user_model()
 
@@ -485,6 +496,115 @@ def remove_player_from_court(court, username, actor=None):
             locked_court, locked_entry, pair,
             reason=CourtActivityLog.Reason.ADMIN_REMOVED, actor=actor,
         )
+
+
+def _users_by_username_or_raise(usernames):
+    users_by_username = {u.username: u for u in User.objects.filter(username__in=usernames)}
+    missing = set(usernames) - users_by_username.keys()
+    if missing:
+        raise ServiceError(f"Unknown username(s): {', '.join(sorted(missing))}.")
+    return users_by_username
+
+
+def _stamp_presence(users, location):
+    """Same same-day check-in stamping verify_pair_credentials does for a
+    real kiosk signup, so Waiting Room status stays accurate for anyone
+    admin adds who hadn't already checked in today."""
+    for user in users:
+        if not has_facility_presence_today(user, location):
+            activity_log.log_player_auth_event(user, location, LoginLog.Context.CHECK_IN)
+
+
+def add_group_to_court(court, usernames, actor=None):
+    """Admin's password-free equivalent of Sign Up: `usernames` is a flat
+    list of 2 or 4 real accounts, split into 1 or 2 pairs and handed to
+    the same create_queue_entry every public signup goes through — every
+    other rule (valid accounts, not already active elsewhere, no
+    duplicates/conflicts on this court, capacity, reservations) still
+    applies exactly as it does for a real kiosk signup. Only the
+    credential check itself is skipped, since admin is already an
+    authenticated, trusted actor."""
+    if len(usernames) not in (2, 4):
+        raise ServiceError("A group must be 2 or 4 players.")
+    if len(set(usernames)) != len(usernames):
+        raise ServiceError("Duplicate usernames are not allowed.")
+    users_by_username = _users_by_username_or_raise(usernames)
+    users = [users_by_username[u] for u in usernames]
+    for user in users:
+        _check_not_expired(user)
+        _reject_if_active_elsewhere(user, court)
+    _stamp_presence(users, court.location)
+
+    pairs = [usernames[i : i + 2] for i in range(0, len(usernames), 2)]
+    created_by = users_by_username[usernames[0]]
+    return create_queue_entry(court=court, pairs=pairs, created_by=created_by)
+
+
+def add_pair_to_open_slot(entry, usernames, actor=None):
+    """Admin's password-free equivalent of Join This Pair: fills a
+    WAITING entry's remaining open slot directly by username."""
+    if len(usernames) != 2:
+        raise ServiceError("A joining pair must be exactly 2 players.")
+    if len(set(usernames)) != 2:
+        raise ServiceError("Duplicate usernames are not allowed.")
+    users_by_username = _users_by_username_or_raise(usernames)
+    users = [users_by_username[u] for u in usernames]
+    for user in users:
+        _check_not_expired(user)
+        _reject_if_active_elsewhere(user, entry.court)
+    _stamp_presence(users, entry.court.location)
+
+    requesting_user = users_by_username[usernames[0]]
+    return join_open_slot(entry=entry, usernames=usernames, requesting_user=requesting_user)
+
+
+def move_entry_to_court(entry, target_court, actor=None):
+    """Relocates an entire QueueEntry (every pair on it) to a different
+    court. A WAITING entry is just repointed. An ACTIVE entry keeps its
+    exact activated_at/expires_at -- a move is a relocation, not a fresh
+    activation, so the group keeps whatever time they already had.
+    Refuses to move an ACTIVE entry onto a court that already has its
+    own active entry (a court can only have one at a time)."""
+    if not target_court.is_active or not target_court.location.is_active:
+        raise ServiceError(f"{target_court.name} is not currently available.")
+    if target_court.id == entry.court_id:
+        raise ServiceError(f"That group is already on {target_court.name}.")
+
+    with transaction.atomic():
+        first_id, second_id = sorted([entry.court_id, target_court.id])
+        locked_courts = {
+            c.id: c for c in Court.objects.select_for_update().filter(id__in=[first_id, second_id])
+        }
+        origin_court = locked_courts[entry.court_id]
+        locked_target = locked_courts[target_court.id]
+        locked_entry = QueueEntry.objects.select_for_update().get(pk=entry.pk)
+
+        if locked_entry.status not in (QueueEntry.Status.WAITING, QueueEntry.Status.ACTIVE):
+            raise ServiceError("This group is no longer active or waiting.")
+
+        pairs = list(locked_entry.pairs.select_related("player_1", "player_2"))
+        flat_usernames = [u for pair in pairs for u in (pair.player_1.username, pair.player_2.username)]
+        conflicting = _conflicting_usernames(locked_target, flat_usernames)
+        if conflicting:
+            raise ServiceError(
+                f"Already signed up on {locked_target.name}: {', '.join(conflicting)}."
+            )
+        if locked_entry.status == QueueEntry.Status.ACTIVE and QueueEntry.objects.filter(
+            court=locked_target, status=QueueEntry.Status.ACTIVE
+        ).exists():
+            raise ServiceError(f"{locked_target.name} already has an active group.")
+
+        locked_entry.court = locked_target
+        locked_entry.save(update_fields=["court"])
+        for pair in pairs:
+            activity_log.log_pair_event(
+                CourtActivityLog.EventType.PAIR_MOVED, locked_target, locked_entry, pair, actor=actor
+            )
+
+        _promote_next_if_free(origin_court)
+
+    locked_entry.refresh_from_db()
+    return locked_entry
 
 
 def drop_court(court, actor=None):

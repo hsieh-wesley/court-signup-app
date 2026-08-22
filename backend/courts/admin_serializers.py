@@ -325,6 +325,22 @@ class AdminRemovePlayerSerializer(serializers.Serializer):
     username = serializers.CharField(max_length=150)
 
 
+class AdminAddGroupSerializer(serializers.Serializer):
+    usernames = serializers.ListField(
+        child=serializers.CharField(max_length=150), min_length=2, max_length=4
+    )
+
+
+class AdminJoinOpenSlotSerializer(serializers.Serializer):
+    usernames = serializers.ListField(
+        child=serializers.CharField(max_length=150), min_length=2, max_length=2
+    )
+
+
+class AdminMoveEntrySerializer(serializers.Serializer):
+    target_court_id = serializers.PrimaryKeyRelatedField(queryset=Court.objects.all())
+
+
 class AdminCourtCreateSerializer(serializers.Serializer):
     location_id = serializers.PrimaryKeyRelatedField(queryset=Location.objects.all())
     number = serializers.IntegerField(required=False, min_value=1, max_value=100)

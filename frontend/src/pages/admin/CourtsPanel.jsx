@@ -61,10 +61,109 @@ function RemoveButton({ username, onRemove }) {
   );
 }
 
-function CourtManageModal({ court, onClose, onAction }) {
+// Admin's password-free equivalent of Join This Pair / Sign Up — plain
+// usernames only, no credentials. `size` is 2 (fill one open slot) or a
+// tab-selectable 2/4 (start a whole new group).
+function UsernamesForm({ size, allowGroupSize, onSubmit, submitLabel }) {
+  const [groupSize, setGroupSize] = useState(size || 2);
+  const [usernames, setUsernames] = useState(["", "", "", ""]);
+  const [error, setError] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const activeSize = allowGroupSize ? groupSize : size;
+
+  function setUsername(i, value) {
+    setUsernames((u) => u.map((v, idx) => (idx === i ? value : v)));
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    try {
+      const names = usernames.slice(0, activeSize).map((u) => u.trim());
+      await onSubmit(names);
+      setUsernames(["", "", "", ""]);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="form">
+      {allowGroupSize && (
+        <div className="tabs tabs-segmented">
+          <button type="button" className={groupSize === 2 ? "active" : ""} onClick={() => setGroupSize(2)}>
+            2 players
+          </button>
+          <button type="button" className={groupSize === 4 ? "active" : ""} onClick={() => setGroupSize(4)}>
+            4 players
+          </button>
+        </div>
+      )}
+      <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
+        {Array.from({ length: activeSize }).map((_, i) => (
+          <input
+            key={i}
+            placeholder={`Player ${i + 1} username`}
+            value={usernames[i]}
+            onChange={(e) => setUsername(i, e.target.value)}
+            required
+            style={{ maxWidth: "10rem" }}
+          />
+        ))}
+      </div>
+      {error && <p className="error">{error}</p>}
+      <button type="submit" className="btn btn-primary btn-sm" disabled={submitting}>
+        {submitting ? "Working…" : submitLabel}
+      </button>
+    </form>
+  );
+}
+
+function MoveToControl({ entryId, otherCourts, onMove }) {
+  const [targetCourtId, setTargetCourtId] = useState("");
+  const [error, setError] = useState(null);
+  if (!otherCourts.length) return null;
+
+  async function handleMove() {
+    setError(null);
+    try {
+      await onMove(entryId, targetCourtId);
+      setTargetCourtId("");
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--space-1)" }}>
+      <select
+        value={targetCourtId}
+        onChange={(e) => setTargetCourtId(e.target.value)}
+        aria-label="Move to court"
+      >
+        <option value="">Move to…</option>
+        {otherCourts.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.name}
+          </option>
+        ))}
+      </select>
+      <button type="button" className="btn btn-secondary btn-sm" disabled={!targetCourtId} onClick={handleMove}>
+        Move
+      </button>
+      {error && <span className="error">{error}</span>}
+    </span>
+  );
+}
+
+function CourtManageModal({ court, allCourts, onClose, onAction }) {
   const allPairs = [
     ...(court.active_entry ? court.active_entry.pairs.map((p) => ({ ...p, entryId: court.active_entry.id })) : []),
   ];
+  const otherCourts = allCourts.filter((c) => c.id !== court.id && c.is_active);
 
   return (
     <Modal title={`Manage ${court.name}`} onClose={onClose}>
@@ -77,7 +176,7 @@ function CourtManageModal({ court, onClose, onAction }) {
           {allPairs.map((pair) => (
             <li key={pair.id}>
               <span>{pair.players.join(" & ")}</span>
-              <span style={{ display: "flex", gap: "var(--space-1)" }}>
+              <span style={{ display: "flex", alignItems: "center", gap: "var(--space-1)", flexWrap: "wrap" }}>
                 {pair.players.map((username) => (
                   <RemoveButton
                     key={username}
@@ -85,6 +184,11 @@ function CourtManageModal({ court, onClose, onAction }) {
                     onRemove={() => onAction("removePlayer", court, username)}
                   />
                 ))}
+                <MoveToControl
+                  entryId={pair.entryId}
+                  otherCourts={otherCourts}
+                  onMove={(entryId, targetCourtId) => onAction("move", court, { entryId, targetCourtId })}
+                />
               </span>
             </li>
           ))}
@@ -110,13 +214,36 @@ function CourtManageModal({ court, onClose, onAction }) {
                     />
                   ))
                 )}
+                <MoveToControl
+                  entryId={entry.id}
+                  otherCourts={otherCourts}
+                  onMove={(entryId, targetCourtId) => onAction("move", court, { entryId, targetCourtId })}
+                />
               </span>
+              {entry.open_slot && (
+                <UsernamesForm
+                  size={2}
+                  submitLabel="Fill Slot"
+                  onSubmit={(usernames) => onAction("joinOpenSlot", court, { entryId: entry.id, usernames })}
+                />
+              )}
             </li>
           ))}
         </ol>
       )}
 
-      <div className="button-row">
+      {court.is_active && (
+        <>
+          <h4>Add a group directly (no password needed)</h4>
+          <UsernamesForm
+            allowGroupSize
+            submitLabel="Add to Court"
+            onSubmit={(usernames) => onAction("addGroup", court, { usernames })}
+          />
+        </>
+      )}
+
+      <div className="button-row" style={{ marginTop: "var(--space-4)" }}>
         <button className="btn btn-danger" onClick={() => onAction("drop", court)}>
           Drop Court
         </button>
@@ -201,10 +328,33 @@ export default function CourtsPanel({ locationId }) {
     await refresh();
   }
 
-  async function handleAction(action, court, username) {
+  // addGroup/joinOpenSlot/move each have their own inline error display
+  // right next to their control (UsernamesForm / MoveToControl) — their
+  // errors bubble there instead of also flashing the panel-level banner,
+  // which would be invisible anyway while the Manage modal covers it.
+  // removePlayer/drop/deactivate have no per-action display, so the
+  // banner (shown after the modal closes, or for removePlayer's inline
+  // confirm) is the only place those show an error.
+  async function handleAction(action, court, payload) {
     setError(null);
+    if (action === "addGroup") {
+      await adminApi.addGroupToCourt(token, court.id, payload.usernames);
+      await refresh();
+      return;
+    }
+    if (action === "joinOpenSlot") {
+      await adminApi.joinOpenSlotAdmin(token, payload.entryId, payload.usernames);
+      await refresh();
+      return;
+    }
+    if (action === "move") {
+      await adminApi.moveEntry(token, payload.entryId, payload.targetCourtId);
+      await refresh();
+      return;
+    }
     try {
       if (action === "removePlayer") {
+        const username = payload;
         if (!window.confirm(`Remove ${username} from ${court.name}?`)) return;
         await adminApi.removePlayerFromCourt(token, court.id, username);
       } else if (action === "drop") {
@@ -294,6 +444,7 @@ export default function CourtsPanel({ locationId }) {
       {managingCourt && (
         <CourtManageModal
           court={managingCourt}
+          allCourts={courts}
           onClose={() => setManagingCourtId(null)}
           onAction={handleAction}
         />

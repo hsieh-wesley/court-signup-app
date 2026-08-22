@@ -273,6 +273,7 @@ class CourtActivityLog(models.Model):
         COURT_DROPPED = "court_dropped", "Court dropped"
         COURT_DEACTIVATED = "court_deactivated", "Court deactivated"
         COURT_REACTIVATED = "court_reactivated", "Court reactivated"
+        PAIR_MOVED = "pair_moved", "Pair moved"
 
     class Reason(models.TextChoices):
         UNSIGNED = "unsigned", "Unsigned"

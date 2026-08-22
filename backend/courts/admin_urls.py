@@ -50,6 +50,21 @@ urlpatterns = [
         name="admin-court-remove-player",
     ),
     path(
+        "courts/<int:pk>/add-group/",
+        views.AdminCourtAddGroupView.as_view(),
+        name="admin-court-add-group",
+    ),
+    path(
+        "courts/entries/<int:pk>/join-open-slot/",
+        views.AdminEntryJoinOpenSlotView.as_view(),
+        name="admin-entry-join-open-slot",
+    ),
+    path(
+        "courts/entries/<int:pk>/move/",
+        views.AdminEntryMoveView.as_view(),
+        name="admin-entry-move",
+    ),
+    path(
         "courts/<int:pk>/drop/", views.AdminCourtDropView.as_view(), name="admin-court-drop"
     ),
     path(

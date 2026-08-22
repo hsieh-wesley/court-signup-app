@@ -6,17 +6,20 @@ from rest_framework.views import APIView
 
 from . import admin_services, services
 from .admin_serializers import (
+    AdminAddGroupSerializer,
     AdminAddLoginSerializer,
     AdminBulkTestPlayersSerializer,
     AdminCourtCountSerializer,
     AdminCourtCreateSerializer,
     AdminCourtSerializer,
+    AdminJoinOpenSlotSerializer,
     AdminLocationCreateSerializer,
     AdminLocationEditSerializer,
     AdminLocationSerializer,
     AdminMembershipCreateSerializer,
     AdminMembershipEditSerializer,
     AdminMembershipSerializer,
+    AdminMoveEntrySerializer,
     AdminPlayerCreateSerializer,
     AdminPlayerEditSerializer,
     AdminPlayerSerializer,
@@ -39,6 +42,13 @@ def _get_court_or_404(pk):
     try:
         return Court.objects.get(pk=pk)
     except Court.DoesNotExist:
+        return None
+
+
+def _get_entry_or_404(pk):
+    try:
+        return QueueEntry.objects.get(pk=pk)
+    except QueueEntry.DoesNotExist:
         return None
 
 
@@ -288,6 +298,67 @@ class AdminCourtRemovePlayerView(APIView):
         try:
             admin_services.remove_player_from_court(
                 court, serializer.validated_data["username"], actor=request.user
+            )
+        except services.ServiceError as exc:
+            return Response({"detail": str(exc)}, status=exc.status)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class AdminCourtAddGroupView(APIView):
+    """Admin's password-free equivalent of Sign Up on the Overview kiosk —
+    2 or 4 real usernames, no credentials required."""
+
+    permission_classes = [IsAdmin]
+
+    def post(self, request, pk):
+        court = _get_court_or_404(pk)
+        if court is None:
+            return Response({"detail": "Court not found."}, status=status.HTTP_404_NOT_FOUND)
+        serializer = AdminAddGroupSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            admin_services.add_group_to_court(
+                court, serializer.validated_data["usernames"], actor=request.user
+            )
+        except services.ServiceError as exc:
+            return Response({"detail": str(exc)}, status=exc.status)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class AdminEntryJoinOpenSlotView(APIView):
+    """Admin's password-free equivalent of Join This Pair."""
+
+    permission_classes = [IsAdmin]
+
+    def post(self, request, pk):
+        entry = _get_entry_or_404(pk)
+        if entry is None:
+            return Response({"detail": "Queue entry not found."}, status=status.HTTP_404_NOT_FOUND)
+        serializer = AdminJoinOpenSlotSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            admin_services.add_pair_to_open_slot(
+                entry, serializer.validated_data["usernames"], actor=request.user
+            )
+        except services.ServiceError as exc:
+            return Response({"detail": str(exc)}, status=exc.status)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class AdminEntryMoveView(APIView):
+    """Relocates a whole group (all its pairs) to a different court."""
+
+    permission_classes = [IsAdmin]
+
+    def post(self, request, pk):
+        entry = _get_entry_or_404(pk)
+        if entry is None:
+            return Response({"detail": "Queue entry not found."}, status=status.HTTP_404_NOT_FOUND)
+        serializer = AdminMoveEntrySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            admin_services.move_entry_to_court(
+                entry, serializer.validated_data["target_court_id"], actor=request.user
             )
         except services.ServiceError as exc:
             return Response({"detail": str(exc)}, status=exc.status)

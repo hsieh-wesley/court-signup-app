@@ -134,6 +134,26 @@ export const adminApi = {
       token,
       body: { username },
     }),
+  // Admin's password-free equivalents of Sign Up / Join This Pair / a
+  // group relocating courts — usernames only, no credentials needed.
+  addGroupToCourt: (token, courtId, usernames) =>
+    request(`/admin/courts/${courtId}/add-group/`, {
+      method: "POST",
+      token,
+      body: { usernames },
+    }),
+  joinOpenSlotAdmin: (token, entryId, usernames) =>
+    request(`/admin/courts/entries/${entryId}/join-open-slot/`, {
+      method: "POST",
+      token,
+      body: { usernames },
+    }),
+  moveEntry: (token, entryId, targetCourtId) =>
+    request(`/admin/courts/entries/${entryId}/move/`, {
+      method: "POST",
+      token,
+      body: { target_court_id: targetCourtId },
+    }),
   dropCourt: (token, courtId) =>
     request(`/admin/courts/${courtId}/drop/`, { method: "POST", token }),
   deactivateCourt: (token, courtId) =>
