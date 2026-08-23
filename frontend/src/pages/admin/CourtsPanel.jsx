@@ -365,21 +365,26 @@ export default function CourtsPanel({ locationId }) {
     setLoading(false);
   }
 
+  // For the Manage modal's username autocomplete — only players actually
+  // checked in today with nowhere else assigned (Waiting Room). Anyone
+  // on_court/in_queue elsewhere would just fail the add anyway (a player
+  // can only be on one court at a time), and not_checked_in means
+  // they're not actually here to be added to a physical court right now.
+  // Called alongside refresh() after every action that could change who
+  // qualifies (add/join/move someone onto a court, or remove them),
+  // not just on location change, so someone just added drops off the
+  // list immediately instead of staying pickable while already placed.
+  async function refreshKnownUsernames() {
+    if (!locationId) return;
+    const players = await adminApi.listPlayers(token, locationId);
+    setKnownUsernames(players.filter((p) => p.status === "waiting_room").map((p) => p.username));
+  }
+
   useEffect(() => {
     setLoading(true);
     refresh();
+    refreshKnownUsernames();
   }, [locationId]);
-
-  // For the Manage modal's username autocomplete — every account that
-  // could actually be added to a court right now (has a working login).
-  useEffect(() => {
-    if (!locationId) return;
-    adminApi.listPlayers(token, locationId).then((players) => {
-      setKnownUsernames(
-        players.filter((p) => p.has_login && p.login_active).map((p) => p.username)
-      );
-    });
-  }, [locationId, token]);
 
   const visible = useMemo(() => {
     return courts
@@ -404,17 +409,17 @@ export default function CourtsPanel({ locationId }) {
     setError(null);
     if (action === "addGroup") {
       await adminApi.addGroupToCourt(token, court.id, payload.usernames);
-      await refresh();
+      await Promise.all([refresh(), refreshKnownUsernames()]);
       return;
     }
     if (action === "joinOpenSlot") {
       await adminApi.joinOpenSlotAdmin(token, payload.entryId, payload.usernames);
-      await refresh();
+      await Promise.all([refresh(), refreshKnownUsernames()]);
       return;
     }
     if (action === "move") {
       await adminApi.moveEntry(token, payload.entryId, payload.targetCourtId);
-      await refresh();
+      await Promise.all([refresh(), refreshKnownUsernames()]);
       return;
     }
     try {
@@ -431,7 +436,7 @@ export default function CourtsPanel({ locationId }) {
         await adminApi.deactivateCourt(token, court.id);
         setManagingCourtId(null);
       }
-      await refresh();
+      await Promise.all([refresh(), refreshKnownUsernames()]);
     } catch (err) {
       setError(err.message);
     }
