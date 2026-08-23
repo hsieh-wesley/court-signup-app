@@ -420,7 +420,22 @@ def validate_new_username(username, exclude_user_id=None):
     `exclude_user_id` excludes that user from BOTH checks — editing an
     account to (re-)claim a name it already legitimately holds (e.g. a
     member re-saving their own protected username unchanged) is not a
-    collision with itself."""
+    collision with itself.
+
+    An ARCHIVED (deactivated) account's username is freed for reuse —
+    with a limited namespace of desirable kiosk names, permanently
+    locking one to someone who's gone would only run the pool dry.
+    Freed usernames are still blocked here first if they're currently
+    protected (an active member reusing a name someone archived doesn't
+    make sense to allow silently). Freeing is a side effect performed
+    right here, not just a check: the archived account's own username is
+    renamed out of the way (its display_name and all history are
+    untouched — history already snapshots names as plain text,
+    independent of the live User.username) so the DB's own username
+    uniqueness constraint doesn't block the new registration a moment
+    later. A lapsed-but-still-active member's username is NOT freed this
+    way — only archiving does that, matching the existing "lapsed stays
+    taken" rule below for anyone who hasn't been archived."""
     if not USERNAME_RE.match(username):
         raise ServiceError("Username must be 1-20 letters, no numbers or symbols.")
 
@@ -440,8 +455,14 @@ def validate_new_username(username, exclude_user_id=None):
     qs = User.objects.filter(username__iexact=username)
     if exclude_user_id:
         qs = qs.exclude(pk=exclude_user_id)
-    if qs.exists():
-        raise ServiceError(f"Username '{username}' is already taken.")
+    existing = qs.select_related("player").first()
+    if existing is not None:
+        existing_player = getattr(existing, "player", None)
+        if existing_player is not None and not existing_player.is_active:
+            existing.username = f"{existing.username}_archived{existing_player.id}"
+            existing.save(update_fields=["username"])
+        else:
+            raise ServiceError(f"Username '{username}' is already taken.")
 
 
 def member_check_in(phone_number, location):

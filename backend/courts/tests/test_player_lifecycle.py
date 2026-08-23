@@ -1,5 +1,8 @@
+import datetime
+
 import pytest
 from django.contrib.auth import authenticate
+from django.utils import timezone
 
 from courts import admin_services, services
 from courts.models import Player, PlayerSession, QueueEntry
@@ -120,6 +123,57 @@ def test_deactivate_player_without_login_just_archives():
     admin_services.deactivate_player(player)
     player.refresh_from_db()
     assert player.is_active is False
+
+
+# An archived (deactivated) account's username is freed for reuse -- a
+# limited namespace of desirable kiosk names shouldn't stay locked to
+# someone who's gone forever.
+def test_username_is_reusable_once_the_old_account_is_archived():
+    alice = make_user("alice")
+    admin_services.deactivate_player(alice.player)
+
+    services.validate_new_username("alice")  # does not raise -- freed
+
+    new_player, plaintext = admin_services.create_player(
+        display_name="Alice", username="alice", enable_login=True
+    )
+    assert new_player.user.username == "alice"
+    # The new account is a genuinely different person/User row than the
+    # archived one -- not a revival of the old one.
+    assert new_player.user_id != alice.id
+    assert authenticate(username="alice", password=plaintext) == new_player.user
+
+
+def test_username_reuse_renames_the_archived_account_out_of_the_way():
+    alice = make_user("alice")
+    old_user_id = alice.id
+    admin_services.deactivate_player(alice.player)
+
+    services.validate_new_username("alice")
+
+    alice.refresh_from_db()
+    assert alice.id == old_user_id
+    assert alice.username != "alice"
+    assert alice.username.startswith("alice")  # still recognizable
+    # display_name and history are untouched by the rename.
+    assert alice.player.display_name == "alice"
+
+
+def test_username_not_reusable_while_the_old_account_is_still_active():
+    make_user("alice")  # active, not archived
+    with pytest.raises(services.ServiceError, match="already taken"):
+        services.validate_new_username("alice")
+
+
+def test_username_not_reusable_for_a_merely_lapsed_not_archived_member():
+    admin_services.start_membership(
+        "alice", "5551230000", expires_at=timezone.now() - datetime.timedelta(days=1)
+    )
+    # Lapsed (membership expired) is not the same as archived (Player.
+    # is_active=False) -- the account itself is still active, so its
+    # name stays taken, matching the existing lapsed-member behavior.
+    with pytest.raises(services.ServiceError, match="already taken"):
+        services.validate_new_username("alice")
 
 
 def test_edit_player_display_name_and_username():
