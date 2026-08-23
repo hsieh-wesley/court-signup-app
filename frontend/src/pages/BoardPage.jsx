@@ -45,7 +45,7 @@ function CourtColumn({ court }) {
           </ul>
         </div>
       ) : (
-        <p className="muted">Court open</p>
+        !info?.blocking && <p className="muted">Court open</p>
       )}
       <h3>Queue</h3>
       {court.waiting_entries.length === 0 && <p className="muted">No one waiting</p>}

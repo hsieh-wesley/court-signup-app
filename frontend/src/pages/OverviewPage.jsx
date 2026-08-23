@@ -271,7 +271,9 @@ function CourtCard({ court, onPick }) {
           </ul>
         </div>
       ) : (
-        <p className="muted">{court.is_active ? "Open — no one on this court" : "Not accepting signups"}</p>
+        !(court.is_active && info?.blocking) && (
+          <p className="muted">{court.is_active ? "Open — no one on this court" : "Not accepting signups"}</p>
+        )
       )}
 
       {court.waiting_entries.length > 0 && (
