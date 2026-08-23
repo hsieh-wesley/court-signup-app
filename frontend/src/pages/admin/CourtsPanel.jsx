@@ -216,8 +216,6 @@ function MoveToControl({ entryId, otherCourts, onMove }) {
   );
 }
 
-const RESERVATION_NOTE_SUGGESTIONS = ["Coaching", "Class", "Google", "Corporate"];
-
 // Staff set reservations same-day, in person -- just the time of day, no
 // date picker. Combines with today's date in the browser's local time.
 function timeToday(timeStr) {
@@ -227,9 +225,24 @@ function timeToday(timeStr) {
   return d;
 }
 
+function toTimeInputValue(date) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+// Defaults so the form opens pre-filled instead of blank -- start rounded
+// up to the next 5 minutes, end an hour after that.
+function defaultReservationTimes() {
+  const now = new Date();
+  const start = new Date(Math.ceil(now.getTime() / (5 * 60000)) * (5 * 60000));
+  const end = new Date(start.getTime() + 60 * 60000);
+  return { start: toTimeInputValue(start), end: toTimeInputValue(end) };
+}
+
 function ReservationControl({ court, onAction }) {
-  const [start, setStart] = useState("");
-  const [end, setEnd] = useState("");
+  const [{ start: defaultStart, end: defaultEnd }] = useState(defaultReservationTimes);
+  const [start, setStart] = useState(defaultStart);
+  const [end, setEnd] = useState(defaultEnd);
   const [note, setNote] = useState("");
   const [error, setError] = useState(null);
   const info = reservationInfo(court);
@@ -239,6 +252,12 @@ function ReservationControl({ court, onAction }) {
     setError(null);
     if (!start || !end) {
       setError("Set both a start and an end time.");
+      return;
+    }
+    const now = new Date();
+    now.setSeconds(0, 0);
+    if (timeToday(start) < now) {
+      setError("Start time can't be before the current time.");
       return;
     }
     if (force) {
@@ -259,8 +278,9 @@ function ReservationControl({ court, onAction }) {
         end: timeToday(end).toISOString(),
         note,
       });
-      setStart("");
-      setEnd("");
+      const fresh = defaultReservationTimes();
+      setStart(fresh.start);
+      setEnd(fresh.end);
       setNote("");
     } catch (err) {
       setError(err.message);
@@ -294,27 +314,21 @@ function ReservationControl({ court, onAction }) {
         <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap", alignItems: "flex-end" }}>
           <label>
             Start
-            <input type="time" value={start} onChange={(e) => setStart(e.target.value)} />
+            <input type="time" step="300" value={start} onChange={(e) => setStart(e.target.value)} />
           </label>
           <label>
             End
-            <input type="time" value={end} onChange={(e) => setEnd(e.target.value)} />
+            <input type="time" step="300" value={end} onChange={(e) => setEnd(e.target.value)} />
           </label>
           <label>
             Reason
             <input
               type="text"
-              list="reservation-note-suggestions"
               placeholder="Coaching, Class, Corporate…"
               value={note}
               onChange={(e) => setNote(e.target.value)}
               maxLength={200}
             />
-            <datalist id="reservation-note-suggestions">
-              {RESERVATION_NOTE_SUGGESTIONS.map((s) => (
-                <option key={s} value={s} />
-              ))}
-            </datalist>
           </label>
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => submit(false)}>
             Set Reservation
