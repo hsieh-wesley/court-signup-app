@@ -384,6 +384,7 @@ class AdminCourtReservationView(APIView):
                 court,
                 serializer.validated_data["start"],
                 serializer.validated_data["end"],
+                note=serializer.validated_data["note"],
                 actor=request.user,
             )
         except services.ServiceError as exc:
@@ -409,6 +410,7 @@ class AdminCourtForceReservationView(APIView):
                 court,
                 serializer.validated_data["start"],
                 serializer.validated_data["end"],
+                note=serializer.validated_data["note"],
                 actor=request.user,
             )
         except services.ServiceError as exc:

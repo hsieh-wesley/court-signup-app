@@ -72,6 +72,7 @@ class CourtBoardSerializer(serializers.ModelSerializer):
         fields = [
             "id", "name", "number", "location", "capacity", "is_active",
             "active_entry", "waiting_entries", "reservation_start", "reservation_end",
+            "reservation_note",
         ]
 
     def get_active_entry(self, court):

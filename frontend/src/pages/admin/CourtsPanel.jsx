@@ -216,9 +216,12 @@ function MoveToControl({ entryId, otherCourts, onMove }) {
   );
 }
 
+const RESERVATION_NOTE_SUGGESTIONS = ["Coaching", "Class", "Google", "Corporate"];
+
 function ReservationControl({ court, onAction }) {
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
+  const [note, setNote] = useState("");
   const [error, setError] = useState(null);
   const info = reservationInfo(court);
   const hasActive = !!court.active_entry;
@@ -245,9 +248,11 @@ function ReservationControl({ court, onAction }) {
       await onAction(force ? "forceReserve" : "setReservation", court, {
         start: new Date(start).toISOString(),
         end: new Date(end).toISOString(),
+        note,
       });
       setStart("");
       setEnd("");
+      setNote("");
     } catch (err) {
       setError(err.message);
     }
@@ -269,6 +274,7 @@ function ReservationControl({ court, onAction }) {
         <p style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexWrap: "wrap" }}>
           <span>
             Reserved {formatWindow(info)}
+            {info.note && ` — ${info.note}`}
             {info.blocking && " — active now, queue blocked until it ends"}
           </span>
           <button type="button" className="btn btn-secondary btn-sm" onClick={clear}>
@@ -284,6 +290,22 @@ function ReservationControl({ court, onAction }) {
           <label>
             End
             <input type="datetime-local" value={end} onChange={(e) => setEnd(e.target.value)} />
+          </label>
+          <label>
+            Reason
+            <input
+              type="text"
+              list="reservation-note-suggestions"
+              placeholder="Coaching, Class, Corporate…"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              maxLength={200}
+            />
+            <datalist id="reservation-note-suggestions">
+              {RESERVATION_NOTE_SUGGESTIONS.map((s) => (
+                <option key={s} value={s} />
+              ))}
+            </datalist>
           </label>
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => submit(false)}>
             Set Reservation
@@ -430,6 +452,7 @@ function CourtRow({ court, onManage }) {
         {info && (
           <div className="muted" style={{ fontSize: "var(--font-size-sm)" }}>
             {info.blocking ? "Reserved now" : "Reserved"} {formatWindow(info)}
+            {info.note && ` — ${info.note}`}
           </div>
         )}
       </td>

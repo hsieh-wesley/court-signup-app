@@ -105,7 +105,7 @@ class AdminCourtSerializer(serializers.ModelSerializer):
         model = Court
         fields = [
             "id", "name", "number", "location", "capacity", "is_active",
-            "reservation_start", "reservation_end",
+            "reservation_start", "reservation_end", "reservation_note",
         ]
 
 
@@ -347,6 +347,7 @@ class AdminMoveEntrySerializer(serializers.Serializer):
 class AdminCourtReservationSerializer(serializers.Serializer):
     start = serializers.DateTimeField(required=False, allow_null=True, default=None)
     end = serializers.DateTimeField(required=False, allow_null=True, default=None)
+    note = serializers.CharField(max_length=200, required=False, allow_blank=True, default="")
 
 
 class AdminCourtCreateSerializer(serializers.Serializer):

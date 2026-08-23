@@ -122,6 +122,10 @@ class Court(models.Model):
     # set_court_reservation / force_reserve_court.
     reservation_start = models.DateTimeField(null=True, blank=True)
     reservation_end = models.DateTimeField(null=True, blank=True)
+    # Freeform label for why the court is reserved -- "Coaching", "Class",
+    # "Corporate", whatever staff types in. Cleared whenever the
+    # reservation itself is cleared.
+    reservation_note = models.CharField(max_length=200, blank=True, default="")
 
     class Meta:
         constraints = [

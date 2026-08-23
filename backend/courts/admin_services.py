@@ -644,14 +644,14 @@ def _validate_reservation_window(start, end):
         raise ServiceError("Reservation start must be before the end time.")
 
 
-def set_court_reservation(court, start, end, actor=None):
+def set_court_reservation(court, start, end, note="", actor=None):
     """The normal, everyday way to reserve a court. Refuses outright if the
     court currently has an ACTIVE entry -- a reservation must never
     silently disrupt a group that was already playing before it existed.
     Admin has to move that group elsewhere or wait until the court is
     free first; see force_reserve_court for the separate, explicit
     override. Clearing (start=end=None) is always allowed, regardless of
-    what's on the court."""
+    what's on the court, and always clears the note too."""
     _validate_reservation_window(start, end)
     with transaction.atomic():
         locked_court = Court.objects.select_for_update().get(pk=court.pk)
@@ -664,7 +664,8 @@ def set_court_reservation(court, start, end, actor=None):
             )
         locked_court.reservation_start = start
         locked_court.reservation_end = end
-        locked_court.save(update_fields=["reservation_start", "reservation_end"])
+        locked_court.reservation_note = note if start is not None else ""
+        locked_court.save(update_fields=["reservation_start", "reservation_end", "reservation_note"])
         activity_log.log_court_event(
             CourtActivityLog.EventType.COURT_RESERVED, locked_court, actor=actor
         )
@@ -674,7 +675,7 @@ def set_court_reservation(court, start, end, actor=None):
     return locked_court
 
 
-def force_reserve_court(court, start, end, actor=None):
+def force_reserve_court(court, start, end, note="", actor=None):
     """The separate emergency-override action: unlike set_court_reservation,
     this is explicitly allowed on an occupied court. If the window already
     covers now, the active entry is paused immediately; a future start is
@@ -684,7 +685,8 @@ def force_reserve_court(court, start, end, actor=None):
         locked_court = Court.objects.select_for_update().get(pk=court.pk)
         locked_court.reservation_start = start
         locked_court.reservation_end = end
-        locked_court.save(update_fields=["reservation_start", "reservation_end"])
+        locked_court.reservation_note = note if start is not None else ""
+        locked_court.save(update_fields=["reservation_start", "reservation_end", "reservation_note"])
         activity_log.log_court_event(
             CourtActivityLog.EventType.COURT_RESERVED, locked_court, actor=actor
         )

@@ -254,6 +254,7 @@ function CourtCard({ court, onPick }) {
       {info && (
         <p className="muted" style={{ fontSize: "var(--font-size-sm)" }}>
           {info.blocking ? "Reserved now" : "Reserved"} {formatWindow(info)}
+          {info.note && ` — ${info.note}`}
         </p>
       )}
 

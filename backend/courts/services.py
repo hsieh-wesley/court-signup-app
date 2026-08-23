@@ -110,7 +110,10 @@ def sweep_courts(court_ids=None):
                 elif locked_court.reservation_end <= now:
                     locked_court.reservation_start = None
                     locked_court.reservation_end = None
-                    locked_court.save(update_fields=["reservation_start", "reservation_end"])
+                    locked_court.reservation_note = ""
+                    locked_court.save(
+                        update_fields=["reservation_start", "reservation_end", "reservation_note"]
+                    )
                     if active and active.paused_at is not None:
                         remaining = active.expires_at - active.paused_at
                         active.expires_at = now + remaining

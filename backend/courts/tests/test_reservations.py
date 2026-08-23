@@ -283,6 +283,23 @@ def test_set_reservation_requires_both_start_and_end():
         admin_services.set_court_reservation(court, now, None)
 
 
+def test_reservation_note_is_saved_and_cleared_with_the_window():
+    court = make_court()
+    now = timezone.now()
+    admin_services.set_court_reservation(
+        court,
+        now + datetime.timedelta(minutes=30),
+        now + datetime.timedelta(minutes=60),
+        note="Coaching",
+    )
+    court.refresh_from_db()
+    assert court.reservation_note == "Coaching"
+
+    admin_services.set_court_reservation(court, None, None)
+    court.refresh_from_db()
+    assert court.reservation_note == ""
+
+
 def test_set_reservation_requires_start_before_end():
     court = make_court()
     now = timezone.now()

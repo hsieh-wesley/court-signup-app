@@ -31,5 +31,5 @@ export function reservationInfo(court) {
   const start = new Date(court.reservation_start);
   const end = new Date(court.reservation_end);
   const now = new Date();
-  return { start, end, blocking: now >= start && now < end };
+  return { start, end, note: court.reservation_note || "", blocking: now >= start && now < end };
 }
