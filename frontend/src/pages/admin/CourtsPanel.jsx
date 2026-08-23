@@ -218,6 +218,15 @@ function MoveToControl({ entryId, otherCourts, onMove }) {
 
 const RESERVATION_NOTE_SUGGESTIONS = ["Coaching", "Class", "Google", "Corporate"];
 
+// Staff set reservations same-day, in person -- just the time of day, no
+// date picker. Combines with today's date in the browser's local time.
+function timeToday(timeStr) {
+  const [hours, minutes] = timeStr.split(":").map(Number);
+  const d = new Date();
+  d.setHours(hours, minutes, 0, 0);
+  return d;
+}
+
 function ReservationControl({ court, onAction }) {
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
@@ -246,8 +255,8 @@ function ReservationControl({ court, onAction }) {
     }
     try {
       await onAction(force ? "forceReserve" : "setReservation", court, {
-        start: new Date(start).toISOString(),
-        end: new Date(end).toISOString(),
+        start: timeToday(start).toISOString(),
+        end: timeToday(end).toISOString(),
         note,
       });
       setStart("");
@@ -285,11 +294,11 @@ function ReservationControl({ court, onAction }) {
         <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap", alignItems: "flex-end" }}>
           <label>
             Start
-            <input type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)} />
+            <input type="time" value={start} onChange={(e) => setStart(e.target.value)} />
           </label>
           <label>
             End
-            <input type="datetime-local" value={end} onChange={(e) => setEnd(e.target.value)} />
+            <input type="time" value={end} onChange={(e) => setEnd(e.target.value)} />
           </label>
           <label>
             Reason
