@@ -64,15 +64,67 @@ function RemoveButton({ username, onRemove }) {
 // Admin's password-free equivalent of Join This Pair / Sign Up — plain
 // usernames only, no credentials. `size` is 2 (fill one open slot) or a
 // tab-selectable 2/4 (start a whole new group).
-function UsernamesForm({ size, allowGroupSize, onSubmit, submitLabel }) {
+// A plain text input would let admin typo a username that then fails on
+// submit — this narrows to matching real accounts as you type, so a
+// name can only be picked, never mistyped. Filters client-side (the
+// player list is small enough per facility) rather than round-tripping
+// to the server on every keystroke.
+function UsernameAutocomplete({ value, onChange, usernames, placeholder }) {
+  const [open, setOpen] = useState(false);
+
+  const matches = useMemo(() => {
+    const term = value.trim().toLowerCase();
+    if (!term) return [];
+    return usernames.filter((u) => u.toLowerCase().includes(term)).slice(0, 8);
+  }, [value, usernames]);
+
+  return (
+    <div className="username-autocomplete">
+      <input
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => {
+          onChange(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        autoComplete="off"
+        required
+        style={{ maxWidth: "10rem" }}
+      />
+      {open && matches.length > 0 && (
+        <ul className="username-autocomplete-list">
+          {matches.map((u) => (
+            <li key={u}>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  onChange(u);
+                  setOpen(false);
+                }}
+              >
+                {u}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function UsernamesForm({ size, allowGroupSize, knownUsernames, onSubmit, submitLabel }) {
   const [groupSize, setGroupSize] = useState(size || 2);
-  const [usernames, setUsernames] = useState(["", "", "", ""]);
+  const [fields, setFields] = useState(["", "", "", ""]);
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const activeSize = allowGroupSize ? groupSize : size;
 
-  function setUsername(i, value) {
-    setUsernames((u) => u.map((v, idx) => (idx === i ? value : v)));
+  function setField(i, value) {
+    setFields((f) => f.map((v, idx) => (idx === i ? value : v)));
   }
 
   async function handleSubmit(e) {
@@ -80,9 +132,9 @@ function UsernamesForm({ size, allowGroupSize, onSubmit, submitLabel }) {
     setError(null);
     setSubmitting(true);
     try {
-      const names = usernames.slice(0, activeSize).map((u) => u.trim());
+      const names = fields.slice(0, activeSize).map((u) => u.trim());
       await onSubmit(names);
-      setUsernames(["", "", "", ""]);
+      setFields(["", "", "", ""]);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -104,13 +156,12 @@ function UsernamesForm({ size, allowGroupSize, onSubmit, submitLabel }) {
       )}
       <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
         {Array.from({ length: activeSize }).map((_, i) => (
-          <input
+          <UsernameAutocomplete
             key={i}
             placeholder={`Player ${i + 1} username`}
-            value={usernames[i]}
-            onChange={(e) => setUsername(i, e.target.value)}
-            required
-            style={{ maxWidth: "10rem" }}
+            value={fields[i]}
+            onChange={(v) => setField(i, v)}
+            usernames={knownUsernames}
           />
         ))}
       </div>
@@ -159,7 +210,7 @@ function MoveToControl({ entryId, otherCourts, onMove }) {
   );
 }
 
-function CourtManageModal({ court, allCourts, onClose, onAction }) {
+function CourtManageModal({ court, allCourts, knownUsernames, onClose, onAction }) {
   const allPairs = [
     ...(court.active_entry ? court.active_entry.pairs.map((p) => ({ ...p, entryId: court.active_entry.id })) : []),
   ];
@@ -223,6 +274,7 @@ function CourtManageModal({ court, allCourts, onClose, onAction }) {
               {entry.open_slot && (
                 <UsernamesForm
                   size={2}
+                  knownUsernames={knownUsernames}
                   submitLabel="Fill Slot"
                   onSubmit={(usernames) => onAction("joinOpenSlot", court, { entryId: entry.id, usernames })}
                 />
@@ -237,6 +289,7 @@ function CourtManageModal({ court, allCourts, onClose, onAction }) {
           <h4>Add a group directly (no password needed)</h4>
           <UsernamesForm
             allowGroupSize
+            knownUsernames={knownUsernames}
             submitLabel="Add to Court"
             onSubmit={(usernames) => onAction("addGroup", court, { usernames })}
           />
@@ -303,6 +356,7 @@ export default function CourtsPanel({ locationId }) {
   const [managingCourtId, setManagingCourtId] = useState(null);
   const [statusFilter, setStatusFilter] = useState("all");
   const [sortBy, setSortBy] = useState("number");
+  const [knownUsernames, setKnownUsernames] = useState([]);
 
   async function refresh() {
     if (!locationId) return;
@@ -315,6 +369,17 @@ export default function CourtsPanel({ locationId }) {
     setLoading(true);
     refresh();
   }, [locationId]);
+
+  // For the Manage modal's username autocomplete — every account that
+  // could actually be added to a court right now (has a working login).
+  useEffect(() => {
+    if (!locationId) return;
+    adminApi.listPlayers(token, locationId).then((players) => {
+      setKnownUsernames(
+        players.filter((p) => p.has_login && p.login_active).map((p) => p.username)
+      );
+    });
+  }, [locationId, token]);
 
   const visible = useMemo(() => {
     return courts
@@ -445,6 +510,7 @@ export default function CourtsPanel({ locationId }) {
         <CourtManageModal
           court={managingCourt}
           allCourts={courts}
+          knownUsernames={knownUsernames}
           onClose={() => setManagingCourtId(null)}
           onAction={handleAction}
         />
