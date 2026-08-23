@@ -547,19 +547,24 @@ export default function CourtsPanel({ locationId }) {
     setLoading(false);
   }
 
-  // For the Manage modal's username autocomplete — only players actually
-  // checked in today with nowhere else assigned (Waiting Room). Anyone
-  // on_court/in_queue elsewhere would just fail the add anyway (a player
-  // can only be on one court at a time), and not_checked_in means
-  // they're not actually here to be added to a physical court right now.
-  // Called alongside refresh() after every action that could change who
-  // qualifies (add/join/move someone onto a court, or remove them),
-  // not just on location change, so someone just added drops off the
-  // list immediately instead of staying pickable while already placed.
+  // For the Manage modal's username autocomplete — every active player
+  // or member (checked in today or not; admin is adding them manually,
+  // which is the whole point of this panel), excluding anyone already
+  // on_court/in_queue elsewhere, since adding them would just fail (a
+  // player can only be on one court at a time) and archived accounts,
+  // which have no business being suggested. Called alongside refresh()
+  // after every action that could change who qualifies (add/join/move
+  // someone onto a court, or remove them), not just on location change,
+  // so someone just added drops off the list immediately instead of
+  // staying pickable while already placed.
   async function refreshKnownUsernames() {
     if (!locationId) return;
     const players = await adminApi.listPlayers(token, locationId);
-    setKnownUsernames(players.filter((p) => p.status === "waiting_room").map((p) => p.username));
+    setKnownUsernames(
+      players
+        .filter((p) => p.is_active && p.status !== "on_court" && p.status !== "in_queue")
+        .map((p) => p.username)
+    );
   }
 
   useEffect(() => {
