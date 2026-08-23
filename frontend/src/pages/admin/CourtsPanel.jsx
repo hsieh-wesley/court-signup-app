@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Plus, X } from "lucide-react";
 import { useAuth } from "../../AuthContext";
 import { adminApi, api } from "../../apiClient";
@@ -77,6 +78,8 @@ function RemoveButton({ username, onRemove }) {
 // to the server on every keystroke.
 function UsernameAutocomplete({ value, onChange, usernames, placeholder }) {
   const [open, setOpen] = useState(false);
+  const [rect, setRect] = useState(null);
+  const inputRef = useRef(null);
 
   const matches = useMemo(() => {
     const term = value.trim().toLowerCase();
@@ -84,40 +87,66 @@ function UsernameAutocomplete({ value, onChange, usernames, placeholder }) {
     return usernames.filter((u) => u.toLowerCase().includes(term)).slice(0, 8);
   }, [value, usernames]);
 
+  // The dropdown itself is portaled straight to <body> and positioned via
+  // the input's own screen coordinates -- this modal scrolls
+  // (`.modal { overflow-y: auto }`), and an ordinary position:absolute
+  // dropdown nested inside gets silently clipped by that ancestor's
+  // overflow the moment the input sits anywhere but the very top of the
+  // visible modal, which is exactly what made the list look like it
+  // "wasn't populating."
+  function openAt(target) {
+    setRect(target.getBoundingClientRect());
+    setOpen(true);
+  }
+
   return (
     <div className="username-autocomplete">
       <input
+        ref={inputRef}
         placeholder={placeholder}
         value={value}
         onChange={(e) => {
           onChange(e.target.value);
-          setOpen(true);
+          openAt(e.target);
         }}
-        onFocus={() => setOpen(true)}
+        onFocus={(e) => openAt(e.target)}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
         autoComplete="off"
         required
         style={{ maxWidth: "10rem" }}
       />
-      {open && matches.length > 0 && (
-        <ul className="username-autocomplete-list">
-          {matches.map((u) => (
-            <li key={u}>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => {
-                  onChange(u);
-                  setOpen(false);
-                }}
-              >
-                {u}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+      {open &&
+        matches.length > 0 &&
+        rect &&
+        createPortal(
+          <ul
+            className="username-autocomplete-list"
+            style={{
+              position: "fixed",
+              top: rect.bottom,
+              left: rect.left,
+              minWidth: rect.width,
+              zIndex: 1000,
+            }}
+          >
+            {matches.map((u) => (
+              <li key={u}>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    onChange(u);
+                    setOpen(false);
+                  }}
+                >
+                  {u}
+                </button>
+              </li>
+            ))}
+          </ul>,
+          document.body
+        )}
     </div>
   );
 }
