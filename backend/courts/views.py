@@ -145,7 +145,7 @@ class CourtListView(APIView):
         courts = Court.objects.all()
         if location_id:
             courts = courts.filter(location_id=location_id)
-            services.reap_expired_reservations(court_ids=list(courts.values_list("id", flat=True)))
+            services.sweep_courts(court_ids=list(courts.values_list("id", flat=True)))
         else:
             # The combined "every location" board (Overview with no filter)
             # should disappear an archived/deactivated location entirely,
@@ -153,7 +153,7 @@ class CourtListView(APIView):
             # kiosk display) -- not just hide it when a specific
             # location_id happens not to be requested.
             courts = courts.filter(location__is_active=True)
-            services.reap_expired_reservations()
+            services.sweep_courts()
         courts = courts.select_related("location").order_by("location__name", "number")
         return Response(CourtBoardSerializer(courts, many=True).data)
 

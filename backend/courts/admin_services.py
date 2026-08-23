@@ -561,10 +561,17 @@ def add_pair_to_open_slot(entry, usernames, actor=None):
 def move_entry_to_court(entry, target_court, actor=None):
     """Relocates an entire QueueEntry (every pair on it) to a different
     court. A WAITING entry is just repointed. An ACTIVE entry keeps its
-    exact activated_at/expires_at -- a move is a relocation, not a fresh
-    activation, so the group keeps whatever time they already had.
-    Refuses to move an ACTIVE entry onto a court that already has its
-    own active entry (a court can only have one at a time)."""
+    exact remaining time -- a move is a relocation, not a fresh
+    activation -- with two reservation-aware adjustments on the target:
+    refused outright if the target is currently inside its own
+    reservation window (not an eligible destination at all), and capped
+    at the target's reservation_start if it has a future one and that
+    would cut the group's session shorter than what they already had
+    (no minimum floor -- even a one-minute remainder is still worth the
+    move rather than leaving the group stuck paused). A PAUSED entry
+    always resumes on arrival, using its frozen remaining time as of the
+    pause. Refuses to move an ACTIVE entry onto a court that already has
+    its own active entry (a court can only have one at a time)."""
     if not target_court.is_active or not target_court.location.is_active:
         raise ServiceError(f"{target_court.name} is not currently available.")
     if target_court.id == entry.court_id:
@@ -582,6 +589,13 @@ def move_entry_to_court(entry, target_court, actor=None):
         if locked_entry.status not in (QueueEntry.Status.WAITING, QueueEntry.Status.ACTIVE):
             raise ServiceError("This group is no longer active or waiting.")
 
+        now = timezone.now()
+        if locked_target.reservation_start and locked_target.reservation_end:
+            if locked_target.reservation_start <= now < locked_target.reservation_end:
+                raise ServiceError(
+                    f"{locked_target.name} is currently reserved and can't accept a move right now."
+                )
+
         pairs = list(locked_entry.pairs.select_related("player_1", "player_2"))
         flat_usernames = [u for pair in pairs for u in (pair.player_1.username, pair.player_2.username)]
         conflicting = _conflicting_usernames(locked_target, flat_usernames)
@@ -594,17 +608,103 @@ def move_entry_to_court(entry, target_court, actor=None):
         ).exists():
             raise ServiceError(f"{locked_target.name} already has an active group.")
 
+        was_paused = locked_entry.paused_at is not None
+        if locked_entry.status == QueueEntry.Status.ACTIVE:
+            if was_paused:
+                remaining = locked_entry.expires_at - locked_entry.paused_at
+                new_expires_at = now + remaining
+            else:
+                new_expires_at = locked_entry.expires_at
+            if locked_target.reservation_start and now < locked_target.reservation_start:
+                new_expires_at = min(new_expires_at, locked_target.reservation_start)
+            locked_entry.expires_at = new_expires_at
+            locked_entry.paused_at = None
+
         locked_entry.court = locked_target
-        locked_entry.save(update_fields=["court"])
+        locked_entry.save(update_fields=["court", "expires_at", "paused_at"])
         for pair in pairs:
             activity_log.log_pair_event(
                 CourtActivityLog.EventType.PAIR_MOVED, locked_target, locked_entry, pair, actor=actor
             )
+            if was_paused:
+                activity_log.log_pair_event(
+                    CourtActivityLog.EventType.PAIR_RESUMED, locked_target, locked_entry, pair, actor=actor
+                )
 
         _promote_next_if_free(origin_court)
 
     locked_entry.refresh_from_db()
     return locked_entry
+
+
+def _validate_reservation_window(start, end):
+    if (start is None) != (end is None):
+        raise ServiceError("Set both a start and an end time, or neither.")
+    if start is not None and start >= end:
+        raise ServiceError("Reservation start must be before the end time.")
+
+
+def set_court_reservation(court, start, end, actor=None):
+    """The normal, everyday way to reserve a court. Refuses outright if the
+    court currently has an ACTIVE entry -- a reservation must never
+    silently disrupt a group that was already playing before it existed.
+    Admin has to move that group elsewhere or wait until the court is
+    free first; see force_reserve_court for the separate, explicit
+    override. Clearing (start=end=None) is always allowed, regardless of
+    what's on the court."""
+    _validate_reservation_window(start, end)
+    with transaction.atomic():
+        locked_court = Court.objects.select_for_update().get(pk=court.pk)
+        if start is not None and QueueEntry.objects.filter(
+            court=locked_court, status=QueueEntry.Status.ACTIVE
+        ).exists():
+            raise ServiceError(
+                f"{locked_court.name} currently has an active group. Move them to another "
+                "court or wait until it's free before reserving this court."
+            )
+        locked_court.reservation_start = start
+        locked_court.reservation_end = end
+        locked_court.save(update_fields=["reservation_start", "reservation_end"])
+        activity_log.log_court_event(
+            CourtActivityLog.EventType.COURT_RESERVED, locked_court, actor=actor
+        )
+        _promote_next_if_free(locked_court)
+
+    locked_court.refresh_from_db()
+    return locked_court
+
+
+def force_reserve_court(court, start, end, actor=None):
+    """The separate emergency-override action: unlike set_court_reservation,
+    this is explicitly allowed on an occupied court. If the window already
+    covers now, the active entry is paused immediately; a future start is
+    just stored, and the lazy sweep pauses it when that time arrives."""
+    _validate_reservation_window(start, end)
+    with transaction.atomic():
+        locked_court = Court.objects.select_for_update().get(pk=court.pk)
+        locked_court.reservation_start = start
+        locked_court.reservation_end = end
+        locked_court.save(update_fields=["reservation_start", "reservation_end"])
+        activity_log.log_court_event(
+            CourtActivityLog.EventType.COURT_RESERVED, locked_court, actor=actor
+        )
+
+        now = timezone.now()
+        active = QueueEntry.objects.select_for_update().filter(
+            court=locked_court, status=QueueEntry.Status.ACTIVE
+        ).first()
+        if start is not None and start <= now and active and active.paused_at is None:
+            active.paused_at = now
+            active.save(update_fields=["paused_at"])
+            for pair in active.pairs.select_related("player_1", "player_2").all():
+                activity_log.log_pair_event(
+                    CourtActivityLog.EventType.PAIR_PAUSED, locked_court, active, pair, actor=actor
+                )
+        elif start is None:
+            _promote_next_if_free(locked_court)
+
+    locked_court.refresh_from_db()
+    return locked_court
 
 
 def drop_court(court, actor=None):

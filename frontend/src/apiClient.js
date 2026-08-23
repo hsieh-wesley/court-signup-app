@@ -154,6 +154,18 @@ export const adminApi = {
       token,
       body: { target_court_id: targetCourtId },
     }),
+  setCourtReservation: (token, courtId, { start, end }) =>
+    request(`/admin/courts/${courtId}/reservation/`, {
+      method: "POST",
+      token,
+      body: { start, end },
+    }),
+  forceReserveCourt: (token, courtId, { start, end }) =>
+    request(`/admin/courts/${courtId}/force-reservation/`, {
+      method: "POST",
+      token,
+      body: { start, end },
+    }),
   dropCourt: (token, courtId) =>
     request(`/admin/courts/${courtId}/drop/`, { method: "POST", token }),
   deactivateCourt: (token, courtId) =>

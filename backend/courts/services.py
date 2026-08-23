@@ -26,13 +26,27 @@ class ServiceError(Exception):
         self.status = status
 
 
-def _reservation_expiry(now):
-    return now + datetime.timedelta(minutes=settings.RESERVATION_DURATION_MINUTES)
+def _session_expiry(now):
+    return now + datetime.timedelta(minutes=settings.SESSION_DURATION_MINUTES)
 
 
 def _promote_next_if_free(court):
-    """Activate the oldest waiting entry if the court has no active entry."""
+    """Activate the oldest waiting entry if the court has no active entry.
+    A court reservation affects this two ways: while `now` is inside
+    [reservation_start, reservation_end), nothing is promoted at all --
+    the queue stays queued until the window is over. Otherwise, a
+    *future* reservation_start caps the new session's expires_at so it
+    never runs into it -- with no minimum floor: any positive amount of
+    time before the reservation is still worth activating for, even a
+    single minute, rather than leaving the court idle."""
     if QueueEntry.objects.filter(court=court, status=QueueEntry.Status.ACTIVE).exists():
+        return
+    now = timezone.now()
+    if (
+        court.reservation_start
+        and court.reservation_end
+        and court.reservation_start <= now < court.reservation_end
+    ):
         return
     next_entry = (
         QueueEntry.objects.select_for_update()
@@ -42,10 +56,12 @@ def _promote_next_if_free(court):
     )
     if next_entry is None:
         return
-    now = timezone.now()
+    expires_at = _session_expiry(now)
+    if court.reservation_start and now < court.reservation_start:
+        expires_at = min(expires_at, court.reservation_start)
     next_entry.status = QueueEntry.Status.ACTIVE
     next_entry.activated_at = now
-    next_entry.expires_at = _reservation_expiry(now)
+    next_entry.expires_at = expires_at
     next_entry.save()
     for pair in next_entry.pairs.select_related("player_1", "player_2").all():
         activity_log.log_pair_event(
@@ -53,10 +69,21 @@ def _promote_next_if_free(court):
         )
 
 
-def reap_expired_reservations(court_ids=None):
-    """Close out any active reservation whose time is up and promote the next
-    waiting entry. Called lazily on every board read and before/after
-    join/unsign, rather than via a background worker (see plan TODO)."""
+def sweep_courts(court_ids=None):
+    """Lazy per-court maintenance pass, run on every board read and
+    before/after join/unsign (no background worker). Three jobs, all
+    under the same per-court lock:
+    1. Close out a naturally-expired ACTIVE session (unrelated to
+       reservations) -- skipped for a currently-paused entry, whose
+       frozen expires_at must never be mistaken for a real expiry.
+    2. If `now` has entered a reservation window and there's still an
+       unpaused ACTIVE entry there, that can only mean the emergency
+       override was used with an already-started window -- pause it.
+       (Ordinary Set Reservation already refuses on an occupied court,
+       so this path is exclusively the override's doing.)
+    3. Once reservation_end has passed, clear the reservation and, if an
+       entry is still paused on that court, resume it -- remaining time
+       carries over exactly (expires_at = now + frozen remaining)."""
     courts = Court.objects.all()
     if court_ids is not None:
         courts = courts.filter(id__in=court_ids)
@@ -69,7 +96,37 @@ def reap_expired_reservations(court_ids=None):
                 .filter(court=locked_court, status=QueueEntry.Status.ACTIVE)
                 .first()
             )
-            if active and active.expires_at and active.expires_at <= timezone.now():
+            now = timezone.now()
+
+            if locked_court.reservation_start and locked_court.reservation_end:
+                in_window = locked_court.reservation_start <= now < locked_court.reservation_end
+                if in_window and active and active.paused_at is None:
+                    active.paused_at = now
+                    active.save(update_fields=["paused_at"])
+                    for pair in active.pairs.select_related("player_1", "player_2").all():
+                        activity_log.log_pair_event(
+                            CourtActivityLog.EventType.PAIR_PAUSED, locked_court, active, pair
+                        )
+                elif locked_court.reservation_end <= now:
+                    locked_court.reservation_start = None
+                    locked_court.reservation_end = None
+                    locked_court.save(update_fields=["reservation_start", "reservation_end"])
+                    if active and active.paused_at is not None:
+                        remaining = active.expires_at - active.paused_at
+                        active.expires_at = now + remaining
+                        active.paused_at = None
+                        active.save(update_fields=["expires_at", "paused_at"])
+                        for pair in active.pairs.select_related("player_1", "player_2").all():
+                            activity_log.log_pair_event(
+                                CourtActivityLog.EventType.PAIR_RESUMED, locked_court, active, pair
+                            )
+
+            if (
+                active
+                and active.paused_at is None
+                and active.expires_at
+                and active.expires_at <= timezone.now()
+            ):
                 for pair in active.pairs.select_related("player_1", "player_2").all():
                     activity_log.log_pair_event(
                         CourtActivityLog.EventType.PAIR_ENDED,
@@ -122,7 +179,7 @@ def create_queue_entry(court, pairs, created_by):
     if missing:
         raise ServiceError(f"Unknown username(s): {', '.join(sorted(missing))}.")
 
-    reap_expired_reservations(court_ids=[court.id])
+    sweep_courts(court_ids=[court.id])
 
     with transaction.atomic():
         locked_court = Court.objects.select_for_update().get(pk=court.pk)
@@ -184,7 +241,7 @@ def join_open_slot(entry, usernames, requesting_user):
         raise ServiceError(f"Unknown username(s): {', '.join(sorted(missing))}.")
 
     court = entry.court
-    reap_expired_reservations(court_ids=[court.id])
+    sweep_courts(court_ids=[court.id])
 
     with transaction.atomic():
         locked_court = Court.objects.select_for_update().get(pk=court.pk)

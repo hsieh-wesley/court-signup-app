@@ -117,6 +117,11 @@ class Court(models.Model):
         default=settings.COURT_CAPACITY_DEFAULT
     )
     is_active = models.BooleanField(default=True)
+    # Both set together, or both null -- a court has a reservation window
+    # or it doesn't. See courts.services.sweep_courts / admin_services.
+    # set_court_reservation / force_reserve_court.
+    reservation_start = models.DateTimeField(null=True, blank=True)
+    reservation_end = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         constraints = [
@@ -221,6 +226,12 @@ class QueueEntry(models.Model):
     activated_at = models.DateTimeField(null=True, blank=True)
     expires_at = models.DateTimeField(null=True, blank=True)
     ended_at = models.DateTimeField(null=True, blank=True)
+    # Set only by the emergency-override reservation action (or resumed by
+    # a move, or by the reservation window ending) -- never by ordinary
+    # Set Reservation, which refuses outright on an occupied court instead.
+    # While set, this entry's displayed remaining time is frozen at
+    # expires_at - paused_at rather than ticking down from now().
+    paused_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["created_at", "id"]
@@ -274,6 +285,9 @@ class CourtActivityLog(models.Model):
         COURT_DEACTIVATED = "court_deactivated", "Court deactivated"
         COURT_REACTIVATED = "court_reactivated", "Court reactivated"
         PAIR_MOVED = "pair_moved", "Pair moved"
+        COURT_RESERVED = "court_reserved", "Court reservation set/cleared"
+        PAIR_PAUSED = "pair_paused", "Pair paused"
+        PAIR_RESUMED = "pair_resumed", "Pair resumed"
 
     class Reason(models.TextChoices):
         UNSIGNED = "unsigned", "Unsigned"

@@ -26,6 +26,7 @@ class QueueEntrySerializer(serializers.ModelSerializer):
     pairs = PairSerializer(many=True, read_only=True)
     open_slot = serializers.SerializerMethodField()
     seconds_remaining = serializers.SerializerMethodField()
+    paused = serializers.SerializerMethodField()
 
     class Meta:
         model = QueueEntry
@@ -40,17 +41,24 @@ class QueueEntrySerializer(serializers.ModelSerializer):
             "ended_at",
             "seconds_remaining",
             "open_slot",
+            "paused",
         ]
 
     def get_open_slot(self, obj):
         return obj.status == QueueEntry.Status.WAITING and len(obj.pairs.all()) == 1
+
+    def get_paused(self, obj):
+        return obj.paused_at is not None
 
     def get_seconds_remaining(self, obj):
         if obj.status != QueueEntry.Status.ACTIVE or not obj.expires_at:
             return None
         from django.utils import timezone
 
-        delta = (obj.expires_at - timezone.now()).total_seconds()
+        # A paused entry's clock is frozen -- its remaining time is fixed
+        # as of the moment it was paused, not ticking down from now().
+        reference = obj.paused_at if obj.paused_at else timezone.now()
+        delta = (obj.expires_at - reference).total_seconds()
         return max(0, int(delta))
 
 
@@ -63,7 +71,7 @@ class CourtBoardSerializer(serializers.ModelSerializer):
         model = Court
         fields = [
             "id", "name", "number", "location", "capacity", "is_active",
-            "active_entry", "waiting_entries",
+            "active_entry", "waiting_entries", "reservation_start", "reservation_end",
         ]
 
     def get_active_entry(self, court):

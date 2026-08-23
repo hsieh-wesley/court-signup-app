@@ -174,5 +174,8 @@ if env.bool("DJANGO_SECURE", default=False):
 # Single source of truth for the business-rule constants used across
 # courts/models.py, courts/serializers.py, and courts/services.py.
 COURT_CAPACITY_DEFAULT = 4
-RESERVATION_DURATION_MINUTES = 45
+# Normal session length for a fresh activation -- unrelated to (and
+# renamed away from "reservation" to avoid colliding with) a Court's own
+# admin-set reservation window (Court.reservation_start/end).
+SESSION_DURATION_MINUTES = 45
 ALLOWED_GROUP_SIZES = (2, 4)

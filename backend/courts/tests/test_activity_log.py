@@ -107,7 +107,7 @@ def test_expired_reservation_logs_pair_ended_with_expired_reason():
     entry.expires_at = timezone.now() - datetime.timedelta(minutes=1)
     entry.save()
 
-    services.reap_expired_reservations(court_ids=[court.id])
+    services.sweep_courts(court_ids=[court.id])
 
     log = CourtActivityLog.objects.get(event_type=CourtActivityLog.EventType.PAIR_ENDED)
     assert log.reason == CourtActivityLog.Reason.EXPIRED

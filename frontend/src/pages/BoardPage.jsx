@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { ALL_LOCATIONS, useFacility } from "../LocationContext";
 import { api } from "../apiClient";
 import { formatSeconds, useLiveCountdown } from "../timeFormat";
-import { courtStatus, COURT_STATUS_LABEL } from "../courtStatus";
+import { courtStatus, COURT_STATUS_LABEL, reservationInfo } from "../courtStatus";
 
 function slotLabel(entry, slotIndex) {
   const pair = entry.pairs.find((p) => p.slot === slotIndex);
@@ -12,10 +12,17 @@ function slotLabel(entry, slotIndex) {
   return "Open slot";
 }
 
+function formatWindow(info) {
+  const fmt = (d) =>
+    d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  return `${fmt(info.start)} – ${fmt(info.end)}`;
+}
+
 function CourtColumn({ court }) {
   const active = court.active_entry;
-  const remaining = useLiveCountdown(active?.seconds_remaining ?? null, active?.id);
+  const remaining = useLiveCountdown(active?.paused ? null : active?.seconds_remaining ?? null, active?.id);
   const status = courtStatus(court);
+  const info = reservationInfo(court);
 
   return (
     <div className="board-column">
@@ -23,9 +30,14 @@ function CourtColumn({ court }) {
         <h2>{court.name}</h2>
         <span className="badge badge-neutral">{COURT_STATUS_LABEL[status]}</span>
       </div>
+      {info && (
+        <p className="muted" style={{ fontSize: "var(--font-size-sm)" }}>
+          {info.blocking ? "Reserved now" : "Reserved"} {formatWindow(info)}
+        </p>
+      )}
       {active ? (
         <div className="board-active">
-          <div className="board-timer">{formatSeconds(remaining)}</div>
+          <div className="board-timer">{active.paused ? "Paused" : formatSeconds(remaining)}</div>
           <ul>
             <li>{slotLabel(active, 1)}</li>
             <li className={active.pairs.length < 2 ? "muted" : ""}>{slotLabel(active, 2)}</li>

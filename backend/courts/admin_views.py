@@ -11,6 +11,7 @@ from .admin_serializers import (
     AdminBulkTestPlayersSerializer,
     AdminCourtCountSerializer,
     AdminCourtCreateSerializer,
+    AdminCourtReservationSerializer,
     AdminCourtSerializer,
     AdminJoinOpenSlotSerializer,
     AdminLocationCreateSerializer,
@@ -363,6 +364,56 @@ class AdminEntryMoveView(APIView):
         except services.ServiceError as exc:
             return Response({"detail": str(exc)}, status=exc.status)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class AdminCourtReservationView(APIView):
+    """Normal reservation-setting -- refuses if the court currently has an
+    active group (see AdminCourtForceReservationView for the override).
+    Also used to clear a reservation (start/end both omitted)."""
+
+    permission_classes = [IsAdmin]
+
+    def post(self, request, pk):
+        court = _get_court_or_404(pk)
+        if court is None:
+            return Response({"detail": "Court not found."}, status=status.HTTP_404_NOT_FOUND)
+        serializer = AdminCourtReservationSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            court = admin_services.set_court_reservation(
+                court,
+                serializer.validated_data["start"],
+                serializer.validated_data["end"],
+                actor=request.user,
+            )
+        except services.ServiceError as exc:
+            return Response({"detail": str(exc)}, status=exc.status)
+        return Response(AdminCourtSerializer(court).data)
+
+
+class AdminCourtForceReservationView(APIView):
+    """Emergency-override reservation-setting -- allowed on an occupied
+    court, pausing the active group's timer immediately if the window
+    already covers now."""
+
+    permission_classes = [IsAdmin]
+
+    def post(self, request, pk):
+        court = _get_court_or_404(pk)
+        if court is None:
+            return Response({"detail": "Court not found."}, status=status.HTTP_404_NOT_FOUND)
+        serializer = AdminCourtReservationSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            court = admin_services.force_reserve_court(
+                court,
+                serializer.validated_data["start"],
+                serializer.validated_data["end"],
+                actor=request.user,
+            )
+        except services.ServiceError as exc:
+            return Response({"detail": str(exc)}, status=exc.status)
+        return Response(AdminCourtSerializer(court).data)
 
 
 class AdminCourtDropView(APIView):

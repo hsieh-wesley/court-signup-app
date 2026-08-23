@@ -65,6 +65,16 @@ urlpatterns = [
         name="admin-entry-move",
     ),
     path(
+        "courts/<int:pk>/reservation/",
+        views.AdminCourtReservationView.as_view(),
+        name="admin-court-reservation",
+    ),
+    path(
+        "courts/<int:pk>/force-reservation/",
+        views.AdminCourtForceReservationView.as_view(),
+        name="admin-court-force-reservation",
+    ),
+    path(
         "courts/<int:pk>/drop/", views.AdminCourtDropView.as_view(), name="admin-court-drop"
     ),
     path(

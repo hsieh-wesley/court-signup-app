@@ -117,7 +117,7 @@ def test_reap_expires_active_and_promotes_next():
     active.expires_at = timezone.now() - datetime.timedelta(minutes=5)
     active.save()
 
-    services.reap_expired_reservations(court_ids=[court.id])
+    services.sweep_courts(court_ids=[court.id])
 
     active.refresh_from_db()
     waiting.refresh_from_db()

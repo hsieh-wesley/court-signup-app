@@ -5,7 +5,13 @@ import { adminApi, api } from "../../apiClient";
 import Modal from "../../components/Modal";
 import Badge from "../../components/Badge";
 import { formatSeconds, useLiveCountdown } from "../../timeFormat";
-import { courtStatus, COURT_STATUS_BADGE, COURT_STATUS_LABEL } from "../../courtStatus";
+import { courtStatus, COURT_STATUS_BADGE, COURT_STATUS_LABEL, reservationInfo } from "../../courtStatus";
+
+function formatWindow(info) {
+  const fmt = (d) =>
+    d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  return `${fmt(info.start)} – ${fmt(info.end)}`;
+}
 
 function AddCourtForm({ onCreate }) {
   const [number, setNumber] = useState("");
@@ -210,11 +216,97 @@ function MoveToControl({ entryId, otherCourts, onMove }) {
   );
 }
 
+function ReservationControl({ court, onAction }) {
+  const [start, setStart] = useState("");
+  const [end, setEnd] = useState("");
+  const [error, setError] = useState(null);
+  const info = reservationInfo(court);
+  const hasActive = !!court.active_entry;
+
+  async function submit(force) {
+    setError(null);
+    if (!start || !end) {
+      setError("Set both a start and an end time.");
+      return;
+    }
+    if (force) {
+      const who = court.active_entry
+        ? court.active_entry.pairs.map((p) => p.players.join(" & ")).join(" + ")
+        : "the current group";
+      if (
+        !window.confirm(
+          `${who} is currently playing on ${court.name}. Emergency Reserve will PAUSE their session immediately. Continue?`
+        )
+      ) {
+        return;
+      }
+    }
+    try {
+      await onAction(force ? "forceReserve" : "setReservation", court, {
+        start: new Date(start).toISOString(),
+        end: new Date(end).toISOString(),
+      });
+      setStart("");
+      setEnd("");
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function clear() {
+    setError(null);
+    try {
+      await onAction("clearReservation", court, { start: null, end: null });
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  return (
+    <div>
+      <h4>Reservation</h4>
+      {info ? (
+        <p style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexWrap: "wrap" }}>
+          <span>
+            Reserved {formatWindow(info)}
+            {info.blocking && " — active now, queue blocked until it ends"}
+          </span>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={clear}>
+            Clear
+          </button>
+        </p>
+      ) : (
+        <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap", alignItems: "flex-end" }}>
+          <label>
+            Start
+            <input type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)} />
+          </label>
+          <label>
+            End
+            <input type="datetime-local" value={end} onChange={(e) => setEnd(e.target.value)} />
+          </label>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => submit(false)}>
+            Set Reservation
+          </button>
+          {hasActive && (
+            <button type="button" className="btn btn-danger btn-sm" onClick={() => submit(true)}>
+              Emergency Reserve (pauses active group)
+            </button>
+          )}
+        </div>
+      )}
+      {error && <p className="error">{error}</p>}
+    </div>
+  );
+}
+
 function CourtManageModal({ court, allCourts, knownUsernames, onClose, onAction }) {
   const allPairs = [
     ...(court.active_entry ? court.active_entry.pairs.map((p) => ({ ...p, entryId: court.active_entry.id })) : []),
   ];
-  const otherCourts = allCourts.filter((c) => c.id !== court.id && c.is_active);
+  const otherCourts = allCourts.filter(
+    (c) => c.id !== court.id && c.is_active && !reservationInfo(c)?.blocking
+  );
 
   return (
     <Modal title={`Manage ${court.name}`} onClose={onClose}>
@@ -226,7 +318,10 @@ function CourtManageModal({ court, allCourts, knownUsernames, onClose, onAction 
         <ul className="pair-list">
           {allPairs.map((pair) => (
             <li key={pair.id}>
-              <span>{pair.players.join(" & ")}</span>
+              <span>
+                {pair.players.join(" & ")}
+                {court.active_entry.paused && <Badge status="warning">Paused</Badge>}
+              </span>
               <span style={{ display: "flex", alignItems: "center", gap: "var(--space-1)", flexWrap: "wrap" }}>
                 {pair.players.map((username) => (
                   <RemoveButton
@@ -296,6 +391,8 @@ function CourtManageModal({ court, allCourts, knownUsernames, onClose, onAction 
         </>
       )}
 
+      {court.is_active && <ReservationControl court={court} onAction={onAction} />}
+
       <div className="button-row" style={{ marginTop: "var(--space-4)" }}>
         <button className="btn btn-danger" onClick={() => onAction("drop", court)}>
           Drop Court
@@ -322,17 +419,27 @@ const SORTERS = {
 
 function CourtRow({ court, onManage }) {
   const active = court.active_entry;
-  const remaining = useLiveCountdown(active?.seconds_remaining ?? null, active?.id);
+  const remaining = useLiveCountdown(active?.paused ? null : active?.seconds_remaining ?? null, active?.id);
   const status = courtStatus(court);
+  const info = reservationInfo(court);
 
   return (
     <tr>
-      <td>{court.name}</td>
+      <td>
+        {court.name}
+        {info && (
+          <div className="muted" style={{ fontSize: "var(--font-size-sm)" }}>
+            {info.blocking ? "Reserved now" : "Reserved"} {formatWindow(info)}
+          </div>
+        )}
+      </td>
       <td>
         <Badge status={COURT_STATUS_BADGE[status]}>{COURT_STATUS_LABEL[status]}</Badge>
       </td>
       <td>{active ? active.pairs.map((p) => p.players.join("/")).join(" + ") : "—"}</td>
-      <td style={{ fontFamily: "var(--font-mono)" }}>{remaining != null ? formatSeconds(remaining) : "—"}</td>
+      <td style={{ fontFamily: "var(--font-mono)" }}>
+        {active?.paused ? "Paused" : remaining != null ? formatSeconds(remaining) : "—"}
+      </td>
       <td>
         {court.waiting_entries.length
           ? `${court.waiting_entries.length} group${court.waiting_entries.length > 1 ? "s" : ""}`
@@ -420,6 +527,21 @@ export default function CourtsPanel({ locationId }) {
     if (action === "move") {
       await adminApi.moveEntry(token, payload.entryId, payload.targetCourtId);
       await Promise.all([refresh(), refreshKnownUsernames()]);
+      return;
+    }
+    if (action === "setReservation") {
+      await adminApi.setCourtReservation(token, court.id, payload);
+      await refresh();
+      return;
+    }
+    if (action === "forceReserve") {
+      await adminApi.forceReserveCourt(token, court.id, payload);
+      await refresh();
+      return;
+    }
+    if (action === "clearReservation") {
+      await adminApi.setCourtReservation(token, court.id, payload);
+      await refresh();
       return;
     }
     try {

@@ -103,7 +103,10 @@ class AdminPlayerSerializer(serializers.ModelSerializer):
 class AdminCourtSerializer(serializers.ModelSerializer):
     class Meta:
         model = Court
-        fields = ["id", "name", "number", "location", "capacity", "is_active"]
+        fields = [
+            "id", "name", "number", "location", "capacity", "is_active",
+            "reservation_start", "reservation_end",
+        ]
 
 
 class AdminLocationSerializer(serializers.ModelSerializer):
@@ -339,6 +342,11 @@ class AdminJoinOpenSlotSerializer(serializers.Serializer):
 
 class AdminMoveEntrySerializer(serializers.Serializer):
     target_court_id = serializers.PrimaryKeyRelatedField(queryset=Court.objects.all())
+
+
+class AdminCourtReservationSerializer(serializers.Serializer):
+    start = serializers.DateTimeField(required=False, allow_null=True, default=None)
+    end = serializers.DateTimeField(required=False, allow_null=True, default=None)
 
 
 class AdminCourtCreateSerializer(serializers.Serializer):

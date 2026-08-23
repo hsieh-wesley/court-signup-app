@@ -21,3 +21,15 @@ export const COURT_STATUS_BADGE = {
   queue: "warning",
   inactive: "neutral",
 };
+
+// Orthogonal to courtStatus() above -- a court can be in any of those 4
+// states AND have a reservation window. `blocking` means "inside the
+// window right now" (the queue can't be promoted onto the court until
+// reservation_end passes).
+export function reservationInfo(court) {
+  if (!court.reservation_start || !court.reservation_end) return null;
+  const start = new Date(court.reservation_start);
+  const end = new Date(court.reservation_end);
+  const now = new Date();
+  return { start, end, blocking: now >= start && now < end };
+}

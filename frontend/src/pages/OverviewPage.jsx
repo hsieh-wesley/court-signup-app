@@ -3,7 +3,13 @@ import { UserMinus } from "lucide-react";
 import { ALL_LOCATIONS, useFacility } from "../LocationContext";
 import { api } from "../apiClient";
 import { formatSeconds, useLiveCountdown } from "../timeFormat";
-import { courtStatus, COURT_STATUS_BADGE, COURT_STATUS_LABEL } from "../courtStatus";
+import { courtStatus, COURT_STATUS_BADGE, COURT_STATUS_LABEL, reservationInfo } from "../courtStatus";
+
+function formatWindow(info) {
+  const fmt = (d) =>
+    d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  return `${fmt(info.start)} – ${fmt(info.end)}`;
+}
 import Modal from "../components/Modal";
 import Badge from "../components/Badge";
 
@@ -234,8 +240,9 @@ function QuickUnsignWidget({ onChanged }) {
 
 function CourtCard({ court, onPick }) {
   const active = court.active_entry;
-  const remaining = useLiveCountdown(active?.seconds_remaining ?? null, active?.id);
+  const remaining = useLiveCountdown(active?.paused ? null : active?.seconds_remaining ?? null, active?.id);
   const status = courtStatus(court);
+  const info = reservationInfo(court);
 
   return (
     <div className="card">
@@ -244,9 +251,16 @@ function CourtCard({ court, onPick }) {
         <Badge status={COURT_STATUS_BADGE[status]}>{COURT_STATUS_LABEL[status]}</Badge>
       </div>
 
+      {info && (
+        <p className="muted" style={{ fontSize: "var(--font-size-sm)" }}>
+          {info.blocking ? "Reserved now" : "Reserved"} {formatWindow(info)}
+        </p>
+      )}
+
       {active ? (
         <div>
-          {remaining != null && <div className="court-timer">{formatSeconds(remaining)}</div>}
+          {active.paused && <div className="court-timer">Paused</div>}
+          {!active.paused && remaining != null && <div className="court-timer">{formatSeconds(remaining)}</div>}
           <ul className="pair-list">
             {active.pairs.map((pair) => (
               <li key={pair.id}>
