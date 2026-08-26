@@ -1,0 +1,49 @@
+# Render Blueprint for CourtFlow's backend + managed Postgres.
+# Apply via Render's "New Blueprint" flow pointed at this repo. The React
+# frontend is deployed separately on Vercel (see frontend/vercel.json) --
+# Render only hosts the Django API and its database here.
+databases:
+  - name: courtflow-db
+    plan: free
+    postgresMajorVersion: 16
+
+services:
+  - type: web
+    name: courtflow-api
+    runtime: python
+    rootDir: backend
+    plan: free
+    buildCommand: "./build.sh"
+    startCommand: "gunicorn config.wsgi:application --bind 0.0.0.0:$PORT"
+    healthCheckPath: /api/health/
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.12"
+      # Render injects this automatically from the linked database above --
+      # config/settings.py reads it directly and switches to a
+      # DATABASE_URL-based config (with sslmode=require) when it's present.
+      - key: DATABASE_URL
+        fromDatabase:
+          name: courtflow-db
+          property: connectionString
+      # Render generates and stores a real random value for this the first
+      # time the blueprint is applied -- never a placeholder.
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DJANGO_DEBUG
+        value: "False"
+      # Includes Render's own onrender.com hostname so the health check and
+      # direct platform URL keep working alongside the real domain -- check
+      # the actual assigned onrender.com hostname after first deploy and
+      # update this if it differs from the name above.
+      - key: DJANGO_ALLOWED_HOSTS
+        value: "court.subvocalize.com,courtflow-api.onrender.com"
+      - key: CORS_ALLOWED_ORIGINS
+        value: "https://court.subvocalize.com"
+      - key: DJANGO_CSRF_TRUSTED_ORIGINS
+        value: "https://court.subvocalize.com"
+      # Render terminates TLS at its own proxy in front of the app.
+      - key: DJANGO_TRUST_PROXY_HEADER
+        value: "True"
+      - key: DJANGO_SECURE
+        value: "True"

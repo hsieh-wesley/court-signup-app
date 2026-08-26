@@ -82,17 +82,18 @@ def test_admin_delete_location_with_history_returns_409_and_explanation():
 # (its own or anyone else's), and the reset invalidates existing sessions.
 def test_admin_can_reset_staff_password():
     call_command("seed_staff_account")
+    old_password = admin_services.get_staff_password()
     admin = make_admin_user("admin")
     client = authed_client(admin)
 
     resp = client.post("/api/admin/staff/reset-password/")
     assert resp.status_code == 200
     new_password = resp.data["password"]
-    assert new_password != "staffpass123"
+    assert new_password != old_password
 
     assert services.verify_credential("staff", new_password)
     with pytest.raises(services.ServiceError):
-        services.verify_credential("staff", "staffpass123")
+        services.verify_credential("staff", old_password)
 
 
 def test_staff_cannot_reset_its_own_password():
@@ -125,9 +126,23 @@ def test_seed_staff_account_does_not_reset_existing_password():
     assert staff.password == changed_hash
 
 
-def test_seed_staff_account_creates_with_default_password():
+# No hardcoded password: an explicit SEED_STAFF_PASSWORD is honored (handy
+# for reproducible local/CI seeding)...
+def test_seed_staff_account_respects_seed_staff_password_env_var(monkeypatch):
+    monkeypatch.setenv("SEED_STAFF_PASSWORD", "a-known-test-password")
     call_command("seed_staff_account")
-    user = services.verify_credential("staff", "staffpass123")
+    user = services.verify_credential("staff", "a-known-test-password")
+    assert user.is_staff
+    assert not user.is_superuser
+
+
+# ...and otherwise a fresh cryptographically random one is generated and
+# immediately usable/viewable, never a fixed default.
+def test_seed_staff_account_generates_a_random_password_by_default():
+    call_command("seed_staff_account")
+    plaintext = admin_services.get_staff_password()
+    assert plaintext
+    user = services.verify_credential("staff", plaintext)
     assert user.is_staff
     assert not user.is_superuser
 
@@ -137,12 +152,13 @@ def test_seed_staff_account_creates_with_default_password():
 # itself, which stays admin/superuser-only.
 def test_seed_staff_account_makes_password_immediately_viewable():
     call_command("seed_staff_account")
+    seeded_password = admin_services.get_staff_password()
     staff = User.objects.get(username="staff")
     client = authed_client(staff)
 
     resp = client.get("/api/admin/staff/credential/")
     assert resp.status_code == 200
-    assert resp.data["password"] == "staffpass123"
+    assert resp.data["password"] == seeded_password
 
 
 def test_reset_staff_password_updates_the_viewable_password():
@@ -158,12 +174,13 @@ def test_reset_staff_password_updates_the_viewable_password():
 
 def test_admin_can_also_view_staff_password():
     call_command("seed_staff_account")
+    seeded_password = admin_services.get_staff_password()
     admin = make_admin_user("admin")
     client = authed_client(admin)
 
     resp = client.get("/api/admin/staff/credential/")
     assert resp.status_code == 200
-    assert resp.data["password"] == "staffpass123"
+    assert resp.data["password"] == seeded_password
 
 
 def test_unauthenticated_cannot_view_staff_password():

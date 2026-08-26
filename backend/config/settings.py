@@ -68,17 +68,29 @@ WSGI_APPLICATION = "config.wsgi.application"
 
 
 # Database
-
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": env("POSTGRES_DB", default="court_signup"),
-        "USER": env("POSTGRES_USER", default="court_signup"),
-        "PASSWORD": env("POSTGRES_PASSWORD", default="court_signup"),
-        "HOST": env("POSTGRES_HOST", default="localhost"),
-        "PORT": env("POSTGRES_PORT", default="5432"),
+#
+# Local dev (and the docker-compose `db` service) use the broken-out
+# POSTGRES_* vars below -- no DATABASE_URL is set locally, so this branch
+# is untouched by the production path. A managed Postgres provider (e.g.
+# Render) instead hands you one connection string via DATABASE_URL; when
+# that's present it takes over entirely and SSL is required, since that's
+# what such providers expect for external connections.
+database_url = env("DATABASE_URL", default=None)
+if database_url:
+    DATABASES = {"default": env.db_url_config(database_url)}
+    DATABASES["default"].setdefault("OPTIONS", {})
+    DATABASES["default"]["OPTIONS"].setdefault("sslmode", "require")
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": env("POSTGRES_DB", default="court_signup"),
+            "USER": env("POSTGRES_USER", default="court_signup"),
+            "PASSWORD": env("POSTGRES_PASSWORD", default="court_signup"),
+            "HOST": env("POSTGRES_HOST", default="localhost"),
+            "PORT": env("POSTGRES_PORT", default="5432"),
+        }
     }
-}
 
 
 # Password validation
@@ -169,6 +181,30 @@ if env.bool("DJANGO_SECURE", default=False):
     SECURE_HSTS_SECONDS = 60 * 60 * 24 * 365
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
+
+# Plain console logging -- sufficient for a platform (Render, etc.) that
+# captures stdout/stderr as its log stream. Django's own bare defaults
+# would otherwise only surface 5xx errors via AdminEmailHandler (which
+# needs SMTP configured) instead of just printing them where the host
+# already looks for logs.
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {
+        "console": {"class": "logging.StreamHandler"},
+    },
+    "root": {
+        "handlers": ["console"],
+        "level": "INFO",
+    },
+    "loggers": {
+        "django.request": {
+            "handlers": ["console"],
+            "level": "ERROR",
+            "propagate": False,
+        },
+    },
+}
 
 # --- Court signup app settings ---
 # Single source of truth for the business-rule constants used across

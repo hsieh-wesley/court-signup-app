@@ -22,6 +22,18 @@ from .serializers import (
 User = get_user_model()
 
 
+class HealthCheckView(APIView):
+    """Unauthenticated liveness check for the hosting platform (e.g. Render)
+    to poll -- every other endpoint requires auth by default
+    (DEFAULT_PERMISSION_CLASSES), so a health check without this would just
+    see 401s and mark the service unhealthy."""
+
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        return Response({"status": "ok"})
+
+
 class LoginView(APIView):
     """Admin sign-in only. Regular players never call this under the public
     kiosk model — see RegisterPlayerView / QueueEntryCreateView / etc.,
