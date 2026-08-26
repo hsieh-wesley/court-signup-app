@@ -23,7 +23,7 @@ User = get_user_model()
 
 
 class HealthCheckView(APIView):
-    """Unauthenticated liveness check for the hosting platform (e.g. Render)
+    """Unauthenticated liveness check for the hosting platform (e.g. Railway)
     to poll -- every other endpoint requires auth by default
     (DEFAULT_PERMISSION_CLASSES), so a health check without this would just
     see 401s and mark the service unhealthy."""

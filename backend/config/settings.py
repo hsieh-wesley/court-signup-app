@@ -71,15 +71,17 @@ WSGI_APPLICATION = "config.wsgi.application"
 #
 # Local dev (and the docker-compose `db` service) use the broken-out
 # POSTGRES_* vars below -- no DATABASE_URL is set locally, so this branch
-# is untouched by the production path. A managed Postgres provider (e.g.
-# Render) instead hands you one connection string via DATABASE_URL; when
-# that's present it takes over entirely and SSL is required, since that's
-# what such providers expect for external connections.
+# is untouched by the production path. A managed Postgres provider instead
+# hands you one connection string via DATABASE_URL; when that's present it
+# takes over entirely. On Railway specifically, the backend and Postgres
+# normally talk over Railway's private network (via a
+# `${{Postgres.DATABASE_URL}}` variable reference in the dashboard), which
+# doesn't need or support SSL -- so it isn't forced here. If DATABASE_URL
+# ever points at a *public* Postgres endpoint that requires SSL, append
+# `?sslmode=require` to that URL directly rather than hardcoding it here.
 database_url = env("DATABASE_URL", default=None)
 if database_url:
     DATABASES = {"default": env.db_url_config(database_url)}
-    DATABASES["default"].setdefault("OPTIONS", {})
-    DATABASES["default"]["OPTIONS"].setdefault("sslmode", "require")
 else:
     DATABASES = {
         "default": {
@@ -182,7 +184,7 @@ if env.bool("DJANGO_SECURE", default=False):
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
 
-# Plain console logging -- sufficient for a platform (Render, etc.) that
+# Plain console logging -- sufficient for a platform (Railway, etc.) that
 # captures stdout/stderr as its log stream. Django's own bare defaults
 # would otherwise only surface 5xx errors via AdminEmailHandler (which
 # needs SMTP configured) instead of just printing them where the host
